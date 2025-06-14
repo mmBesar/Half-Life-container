@@ -51,7 +51,7 @@ RUN mkdir -p /data && chmod -R 0775 /data
 RUN if [ "$TARGETARCH" = "amd64" ]; then dpkg --add-architecture i386; fi && \
   apt-get update && \
   apt-get install -y --no-install-recommends \
-    libstdc++6 libc6 ca-certificates \
+    libstdc++6 libc6 ca-certificates file coreutils \
     $(if [ "$TARGETARCH" = "amd64" ]; then echo "libc6:i386 libstdc++6:i386"; fi) && \
   rm -rf /var/lib/apt/lists/* && apt-get clean
 

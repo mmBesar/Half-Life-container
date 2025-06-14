@@ -24,4 +24,5 @@ cd "$XASH3D_BASE"
 ARGS="-port $HLSERVER_PORT +map $HLSERVER_MAP +maxplayers $HLSERVER_MAXPLAYERS"
 
 echo "🚀 Launching server: ./xash -game $HLSERVER_GAME $ARGS"
-./xash -game "$HLSERVER_GAME" $ARGS
+cd "/data"
+exec "$XASH3D_BASE/xash" -game "$HLSERVER_GAME" $ARGS

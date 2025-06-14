@@ -1,19 +1,18 @@
-# Use Debian slim base with multi‑arch support
-FROM --platform=$TARGETPLATFORM debian:bullseye-slim AS build
+# syntax=docker/dockerfile:1
 
+FROM --platform=$TARGETPLATFORM debian:bullseye-slim AS build
 ARG TARGETPLATFORM
+
 RUN apt-get update \
  && apt-get install -y --no-install-recommends wget ca-certificates xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
-# Install Xash3D FWGS
 RUN wget -O /tmp/xash3d.tar.xz \
     https://github.com/FWGS/xash3d-fwgs/releases/latest/download/xash3d-fwgs-linux.tar.xz \
  && mkdir -p /xash3d \
  && tar -xJf /tmp/xash3d.tar.xz -C /xash3d \
  && rm /tmp/xash3d.tar.xz
 
-# Final runtime image
 FROM --platform=$TARGETPLATFORM debian:bullseye-slim
 ARG UID=1000
 ARG GID=1000

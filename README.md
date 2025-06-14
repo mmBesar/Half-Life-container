@@ -5,6 +5,8 @@
 
 ---
 
+![Build](https://github.com/\${REPO_OWNER:-mmbesar}/half-life/actions/workflows/container-build.yml/badge.svg)
+
 # 🎮 Half-Life Dedicated Server in Docker
 
 This project builds a multi-architecture Docker container for running a dedicated Half-Life server using [Xash3D-FWGS](https://github.com/FWGS/xash3d-fwgs), targeting both AMD64 and ARM64 (e.g. Raspberry Pi 4).
@@ -63,10 +65,15 @@ Ensure you provide valid game content under `valve/`.
 This project uses GitHub Actions to build and publish multi-arch Docker images to GitHub Container Registry:
 
 ```text
-ghcr.io/<youruser>/half-life:latest
+ghcr.io/<repo-owner>/half-life:latest
 ```
 
-See `.github/workflows/container-build.yml` for details.
+### Automated Releases
+
+* Pushing a new tag (e.g., `v1.0.0`) will:
+
+  * Build and push multi-arch images
+  * Create a GitHub release based on that tag
 
 ---
 

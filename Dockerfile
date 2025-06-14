@@ -7,8 +7,6 @@ ENV LC_ALL=C.UTF-8
 ARG TARGETARCH
 ARG TARGETPLATFORM
 
-RUN useradd -m hlserver && mkdir -p /home/hlserver
-
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
     dpkg --add-architecture i386; \
   fi
@@ -22,8 +20,7 @@ RUN apt-get update && \
     fi && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-USER hlserver
-WORKDIR /home/hlserver
+WORKDIR /tmp/build
 
 RUN git clone --recursive --depth=1 https://github.com/FWGS/xash3d-fwgs.git
 
@@ -39,7 +36,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     ./waf configure -T release --dedicated --64bits --enable-utils; \
   fi
 
-RUN ./waf build -j$(nproc)
+RUN ./waf build -j$(nproc) && strip ./build/engine/xash || true
 
 FROM ubuntu:24.04
 
@@ -49,7 +46,7 @@ ENV LC_ALL=C.UTF-8
 
 ARG TARGETARCH
 
-RUN useradd -m hlserver && mkdir -p /data
+RUN mkdir -p /data && chmod -R 0775 /data
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then dpkg --add-architecture i386; fi && \
   apt-get update && \
@@ -58,10 +55,9 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then dpkg --add-architecture i386; fi && \
     $(if [ "$TARGETARCH" = "amd64" ]; then echo "libc6:i386 libstdc++6:i386"; fi) && \
   rm -rf /var/lib/apt/lists/* && apt-get clean
 
-USER hlserver
 WORKDIR /data
 
-COPY --from=builder --chown=hlserver:hlserver /home/hlserver/xash3d-fwgs/build /data/xash3d-fwgs/build
+COPY --from=builder /tmp/build/xash3d-fwgs/build /data/xash3d-fwgs/build
 
 RUN echo '#!/bin/bash' > /data/start-server.sh && \
   echo 'set -e' >> /data/start-server.sh && \
@@ -92,19 +88,24 @@ RUN echo '#!/bin/bash' > /data/start-server.sh && \
   echo 'fi' >> /data/start-server.sh && \
   echo 'echo "Using binary: $BINARY"' >> /data/start-server.sh && \
   echo 'echo "Binary info: $(file \"$BINARY\")"' >> /data/start-server.sh && \
+  echo 'mkdir -p /data/logs' >> /data/start-server.sh && \
+  echo 'echo "Binary size: $(du -h \"$BINARY\" | cut -f1)" | tee -a /data/logs/startup.log' >> /data/start-server.sh && \
   echo 'PORT="${HLSERVER_PORT:-27015}"' >> /data/start-server.sh && \
   echo 'MAXPLAYERS="${HLSERVER_MAXPLAYERS:-16}"' >> /data/start-server.sh && \
   echo 'MAP="${HLSERVER_MAP:-crossfire}"' >> /data/start-server.sh && \
-  echo 'echo "Starting server with:"' >> /data/start-server.sh && \
-  echo 'echo "  Port: $PORT"' >> /data/start-server.sh && \
-  echo 'echo "  Max players: $MAXPLAYERS"' >> /data/start-server.sh && \
-  echo 'echo "  Default map: $MAP"' >> /data/start-server.sh && \
+  echo 'echo "Starting server with:" | tee -a /data/logs/startup.log' >> /data/start-server.sh && \
+  echo 'echo "  Port: $PORT" | tee -a /data/logs/startup.log' >> /data/start-server.sh && \
+  echo 'echo "  Max players: $MAXPLAYERS" | tee -a /data/logs/startup.log' >> /data/start-server.sh && \
+  echo 'echo "  Default map: $MAP" | tee -a /data/logs/startup.log' >> /data/start-server.sh && \
   echo 'exec "$BINARY" -dedicated \\' >> /data/start-server.sh && \
   echo '  -port "$PORT" \\' >> /data/start-server.sh && \
   echo '  -maxplayers "$MAXPLAYERS" \\' >> /data/start-server.sh && \
   echo '  +map "$MAP" \\' >> /data/start-server.sh && \
   echo '  "$@"' >> /data/start-server.sh && \
   chmod 755 /data/start-server.sh
+
+# Allow container to run as any user (default to 1000)
+USER 1000:1000
 
 EXPOSE 27015/udp
 

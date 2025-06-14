@@ -1,49 +1,136 @@
 version: '3.8'
 
+# Example Docker Compose file for Xash3D FWGS Half-Life Server
+# Copy this file to docker-compose.yml and customize as needed
+
 services:
   half-life:
     image: ghcr.io/mmbesar/half-life:latest
     container_name: half-life
-    networks:
-      - gaming
     restart: unless-stopped
+    
+    # User configuration - replace with your actual UID:GID
     user: "${PUID:-1000}:${PGID:-1000}"
+    
+    # Network configuration
+    networks:
+      - ${HS_NETWORK:-default}
+    
+    # Port configuration
     ports:
-      - "27015:27015/udp"  # Half-Life server port
+      - "${HLSERVER_PORT:-27015}:${HLSERVER_PORT:-27015}/udp"
+    
+    # Volume mounts
     volumes:
-      # Mount game data directories
+      # Half-Life game data (required)
       - ${CONTAINER_DIR:-./data}/half-life/valve:/data/valve
+      
+      # Counter-Strike game data (optional, for CS support)
       - ${CONTAINER_DIR:-./data}/half-life/cstrike:/data/cstrike
+      
+      # Server logs
       - ${CONTAINER_DIR:-./data}/half-life/logs:/data/logs
+      
+      # Custom server configurations (optional)
+      - ${CONTAINER_DIR:-./data}/half-life/config:/data/config
+      
+      # Additional game mods (optional)
+      # - ${CONTAINER_DIR:-./data}/half-life/custom_mod:/data/custom_mod
+    
+    # Environment variables
     environment:
-      # Core server settings
-      HLSERVER_PORT: 27015
-      HLSERVER_MAP: crossfire                    # Starting map
-      HLSERVER_MAXPLAYERS: 16
-      HLSERVER_HOSTNAME: "My Half-Life Server"
-      HLSERVER_GAME: valve                       # 'valve' for Half-Life, 'cstrike' for Counter-Strike
+      # Basic server settings
+      HLSERVER_PORT: ${HLSERVER_PORT:-27015}
+      HLSERVER_MAP: ${HLSERVER_MAP:-stalkyard}
+      HLSERVER_MAXPLAYERS: ${HLSERVER_MAXPLAYERS:-16}
+      HLSERVER_HOSTNAME: ${HLSERVER_HOSTNAME:-"Xash3D FWGS Server"}
+      HLSERVER_GAME: ${HLSERVER_GAME:-valve}
       
-      # Optional password protection
-      HLSERVER_PASSWORD: ""                      # Server password (empty = no password)
-      HLSERVER_RCON_PASSWORD: "your_rcon_pass"   # RCON password for remote administration
+      # Bot configuration (ONLY works for Counter-Strike!)
+      HLSERVER_BOTS: ${HLSERVER_BOTS:-false}
+      HLSERVER_BOTS_COUNT: ${HLSERVER_BOTS_COUNT:-0}
       
-      # Bot configuration
-      HLSERVER_BOTS: true                        # Enable/disable bots
-      HLSERVER_BOTS_COUNT: 8                     # Number of bots (when enabled)
+      # Security settings (optional)
+      HLSERVER_PASSWORD: ${HLSERVER_PASSWORD:-""}
+      HLSERVER_RCON_PASSWORD: ${HLSERVER_RCON_PASSWORD:-""}
       
       # Additional server arguments (optional)
-      HLSERVER_ADDITIONAL_ARGS: "+sv_cheats 0 +mp_timelimit 30"
-      
-      # User/Group IDs (for file permissions)
-      PUID: ${PUID:-1000}
-      PGID: ${PGID:-1000}
+      HLSERVER_ADDITIONAL_ARGS: ${HLSERVER_ADDITIONAL_ARGS:-""}
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "netstat", "-tuln", "|", "grep", ":${HLSERVER_PORT:-27015}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # Example: Counter-Strike server (separate instance)
+  counter-strike:
+    image: ghcr.io/mmbesar/half-life:latest
+    container_name: counter-strike
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    
+    networks:
+      - ${HS_NETWORK:-default}
+    
+    ports:
+      - "${CS_SERVER_PORT:-27016}:${CS_SERVER_PORT:-27016}/udp"
+    
+    volumes:
+      - ${CONTAINER_DIR:-./data}/counter-strike/valve:/data/valve
+      - ${CONTAINER_DIR:-./data}/counter-strike/cstrike:/data/cstrike
+      - ${CONTAINER_DIR:-./data}/counter-strike/logs:/data/logs
+    
+    environment:
+      HLSERVER_PORT: ${CS_SERVER_PORT:-27016}
+      HLSERVER_MAP: ${CS_SERVER_MAP:-de_dust2}
+      HLSERVER_MAXPLAYERS: ${CS_SERVER_MAXPLAYERS:-20}
+      HLSERVER_HOSTNAME: ${CS_SERVER_HOSTNAME:-"Counter-Strike 1.6 Server"}
+      HLSERVER_GAME: cstrike
+      HLSERVER_BOTS: ${CS_SERVER_BOTS:-true}
+      HLSERVER_BOTS_COUNT: ${CS_SERVER_BOTS_COUNT:-8}
+    
+    profiles:
+      - counter-strike  # Enable with: docker-compose --profile counter-strike up
 
 networks:
-  gaming:
+  default:
+    name: ${HS_NETWORK:-half-life-network}
     driver: bridge
 
 # Example .env file contents:
 # PUID=1000
-# PGID=1000  
-# CONTAINER_DIR=./data
-# HS_NETWORK=gaming
+# PGID=1000
+# CONTAINER_DIR=/opt/containers
+# HS_NETWORK=gaming-network
+# 
+# # Half-Life Server Configuration
+# HLSERVER_PORT=27015
+# HLSERVER_MAP=stalkyard
+# HLSERVER_MAXPLAYERS=16
+# HLSERVER_HOSTNAME="My Half-Life Server"
+# HLSERVER_GAME=valve
+# HLSERVER_BOTS=true
+# HLSERVER_BOTS_COUNT=10
+# HLSERVER_PASSWORD=""
+# HLSERVER_RCON_PASSWORD="your_rcon_password"
+# 
+# # Counter-Strike Server Configuration
+# CS_SERVER_PORT=27016
+# CS_SERVER_MAP=de_dust2
+# CS_SERVER_MAXPLAYERS=20
+# CS_SERVER_HOSTNAME="My Counter-Strike Server"
+# CS_SERVER_BOTS=true
+# CS_SERVER_BOTS_COUNT=8

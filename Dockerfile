@@ -27,7 +27,7 @@ RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git
 
 # Build xash3d
 WORKDIR /build/xash3d-fwgs
-RUN python3 waf configure --dedicated --disable-gl4es \
+RUN python3 waf configure --dedicated --disable-gl --disable-vgui \
     && python3 waf build
 
 # Runtime stage
@@ -61,8 +61,6 @@ ENV HLSERVER_PORT=27015 \
     HLSERVER_MAP=crossfire \
     HLSERVER_MAXPLAYERS=16 \
     HLSERVER_HOSTNAME="Half-Life Server" \
-    HLSERVER_PASSWORD="" \
-    HLSERVER_RCON_PASSWORD="" \
     HLSERVER_BOTS=false \
     HLSERVER_BOTS_COUNT=4 \
     HLSERVER_GAME=valve \

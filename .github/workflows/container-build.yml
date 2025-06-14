@@ -1,14 +1,15 @@
-name: Build & Release Multi-Arch Container
+name: Build & Push Multi‑Arch
 
 on:
   push:
-    branches: ["main", "master"]
-    tags: ["v*"]
+    branches: [main, master]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
+
     permissions:
       contents: write
       packages: write
@@ -16,37 +17,36 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Normalize repo owner lowercase
+        id: repo
+        run: |
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
-        with:
-          platforms: arm64, amd64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Log in to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Normalize GitHub Repository Owner
-        id: repo
-        run: echo "::set-output name=owner::$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-
-      - name: Build and Push Docker Image
+      - name: Build & Push
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ steps.repo.outputs.owner }}/half-life:latest
-            ghcr.io/${{ steps.repo.outputs.owner }}/half-life:${{ github.ref_name }}
+            ghcr.io/${{ env.owner }}/half-life:latest
+            ghcr.io/${{ env.owner }}/half-life:${{ github.ref_name }}
 
       - name: Create GitHub Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true

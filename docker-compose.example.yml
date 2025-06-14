@@ -2,9 +2,9 @@ version: "3.8"
 
 services:
   half-life:
-    image: ghcr.io/${GHCR_REPO_OWNER:-mmbesar}/half-life:latest
+    image: ghcr.io/${GHCR_REPO_OWNER:-yourname}/half-life:latest
     container_name: half-life
-    user: "${PGID:-1000}:${PUID:-1000}"
+    user: "${PUID:-1000}:${PGID:-1000}"
     networks:
       - hl_net
     restart: unless-stopped
@@ -14,11 +14,11 @@ services:
       HLSERVER_PORT: "${HLSERVER_PORT:-27015}"
       HLSERVER_MAP: "${HLSERVER_MAP:-stalkyard}"
       HLSERVER_MAXPLAYERS: "${HLSERVER_MAXPLAYERS:-16}"
-      HLSERVER_BOTS: "${HLSERVER_BOTS:-true}"
-      HLSERVER_BOTS_COUNT: "${HLSERVER_BOTS_COUNT:-10}"
+      HLSERVER_BOTS: "${HLSERVER_BOTS:-false}"
     volumes:
       - ./valve:/data/valve
       - ./logs:/data/logs
+      - ./configs:/data/configs:ro
 
 networks:
   hl_net:

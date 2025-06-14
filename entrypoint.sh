@@ -4,16 +4,17 @@ set -e
 : "${HLSERVER_PORT:=27015}"
 : "${HLSERVER_MAP:=stalkyard}"
 : "${HLSERVER_MAXPLAYERS:=16}"
+: "${HLSERVER_BOTS:=false}"
 
-cd "$XASH3D_BASE"
-mkdir -p /data/valve /data/logs
-cp -r /data/valve/* ./valve/ || true
-
-ARGS="-port $HLSERVER_PORT +map $HLSERVER_MAP +maxplayers $HLSERVER_MAXPLAYERS"
-
-if [[ "$HLSERVER_BOTS" == "true" && "$HLSERVER_BOTS_COUNT" =~ ^[0-9]+$ ]]; then
-  ARGS="$ARGS +sv_cheats 1 +bot_enable 1 +bot_quota $HLSERVER_BOTS_COUNT +bot_quota_mode fill"
+if [[ "$HLSERVER_BOTS" == "true" ]]; then
+  echo "Enabling bot mode: linking liblist.bots.gam"
+  cp /data/configs/liblist.bots.gam /data/valve/liblist.gam
+else
+  echo "Running clean server: linking liblist.clean.gam"
+  cp /data/configs/liblist.clean.gam /data/valve/liblist.gam
 fi
 
-echo "Launching Half-Life server: $ARGS"
-./xash3d -game valve $ARGS
+cd "$XASH3D_BASE"
+ARGS="-port $HLSERVER_PORT +map $HLSERVER_MAP +maxplayers $HLSERVER_MAXPLAYERS"
+echo "Launching Half‑Life dedicated server: $ARGS"
+./xashds -game valve $ARGS

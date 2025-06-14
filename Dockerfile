@@ -2,29 +2,25 @@
 FROM debian:bullseye-slim AS builder
 
 ARG TARGETPLATFORM
+ENV XASH_RELEASE=master
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends wget jq ca-certificates xz-utils \
+ && apt-get install -y --no-install-recommends wget ca-certificates xz-utils gzip tar \
  && rm -rf /var/lib/apt/lists/*
 
-# Download correct arch binary from GitHub
 RUN set -eux; \
-    ARCH=""; \
-    case "$TARGETPLATFORM" in \
-      "linux/amd64") ARCH="linux-x86_64" ;; \
-      "linux/arm64") ARCH="linux-arm64" ;; \
-      *) echo "Unsupported TARGETPLATFORM: $TARGETPLATFORM" && exit 1 ;; \
-    esac; \
-    TAG=$(wget -qO- https://api.github.com/repos/FWGS/xash3d-fwgs/releases/latest | jq -r .tag_name); \
-    echo "Fetching Xash3D tag: $TAG for arch: $ARCH"; \
-    URL="https://github.com/FWGS/xash3d-fwgs/releases/download/${TAG}/xash3d-fwgs-${TAG}-${ARCH}.tar.xz"; \
-    wget -O /tmp/xash3d.tar.xz "$URL"; \
-    mkdir -p /xash3d; \
-    tar -xJf /tmp/xash3d.tar.xz -C /xash3d; \
-    rm /tmp/xash3d.tar.xz
+  case "$TARGETPLATFORM" in \
+    "linux/amd64") ARCH=amd64 ;; \
+    "linux/arm64") ARCH=arm64 ;; \
+    *) echo "Unsupported arch: $TARGETPLATFORM" && exit 1 ;; \
+  esac; \
+  FILE=xashds-linux-${ARCH}.tar.gz; \
+  URL=https://github.com/FWGS/xash3d-fwgs/releases/download/${XASH_RELEASE}/${FILE}; \
+  echo "Downloading $URL"; \
+  wget -O /tmp/xashds.tar.gz "$URL"; \
+  mkdir -p /xashds && tar -xzf /tmp/xashds.tar.gz -C /xashds && rm /tmp/xashds.tar.gz
 
 FROM debian:bullseye-slim
-
 ARG UID=1000
 ARG GID=1000
 
@@ -34,11 +30,11 @@ RUN apt-get update \
  && useradd -m -u "$UID" -g hl hl \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /xash3d /opt/xash3d
+COPY --from=builder /xashds /opt/xashds
 WORKDIR /data
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER hl
-ENV XASH3D_BASE=/opt/xash3d
+ENV XASH3D_BASE=/opt/xashds
 ENTRYPOINT ["entrypoint.sh"]

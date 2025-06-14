@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM debian:bullseye-slim AS builder
+FROM debian:bookworm-slim AS builder
 
 ARG TARGETPLATFORM
 
@@ -16,7 +16,7 @@ RUN set -eux; \
   mkdir -p /xashds && tar -xzf /tmp/xashds.tar.gz -C /xashds && rm /tmp/xashds.tar.gz; \
   mv /xashds/xashds-linux-*/* /xashds
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 ARG UID=1000
 ARG GID=1000
 

@@ -24,7 +24,7 @@ WORKDIR /tmp/build
 
 RUN git clone --recursive --depth=1 https://github.com/FWGS/xash3d-fwgs.git
 
-WORKDIR /home/hlserver/xash3d-fwgs
+WORKDIR /tmp/build/xash3d-fwgs
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
     ./waf configure -T release --dedicated --enable-utils; \

@@ -5,16 +5,23 @@ set -e
 : "${HLSERVER_MAP:=stalkyard}"
 : "${HLSERVER_MAXPLAYERS:=16}"
 : "${HLSERVER_BOTS:=false}"
+: "${HLSERVER_GAME:=valve}"
 
+CONFIG_PATH="/data/configs"
+GAME_PATH="/data/${HLSERVER_GAME}"
+LIBLIST_DEST="${GAME_PATH}/liblist.gam"
+
+# Bot toggle via liblist.gam swap
 if [[ "$HLSERVER_BOTS" == "true" ]]; then
-  echo "Enabling bot mode: linking liblist.bots.gam"
-  cp /data/configs/liblist.bots.gam /data/valve/liblist.gam
+  echo "🧠 Enabling bots: copying liblist.bots.gam"
+  cp "${CONFIG_PATH}/liblist.bots.gam" "$LIBLIST_DEST"
 else
-  echo "Running clean server: linking liblist.clean.gam"
-  cp /data/configs/liblist.clean.gam /data/valve/liblist.gam
+  echo "🎮 Clean mode: copying liblist.clean.gam"
+  cp "${CONFIG_PATH}/liblist.clean.gam" "$LIBLIST_DEST"
 fi
 
 cd "$XASH3D_BASE"
 ARGS="-port $HLSERVER_PORT +map $HLSERVER_MAP +maxplayers $HLSERVER_MAXPLAYERS"
-echo "Launching Half‑Life dedicated server: $ARGS"
-./xashds -game valve $ARGS
+
+echo "🚀 Launching server: ./xash -game $HLSERVER_GAME $ARGS"
+./xash -game "$HLSERVER_GAME" $ARGS

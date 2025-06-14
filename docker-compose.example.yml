@@ -11,6 +11,7 @@ services:
     ports:
       - "${HLSERVER_PORT:-27015}:${HLSERVER_PORT:-27015}/udp"
     environment:
+      HLSERVER_GAME: valve # or cstrike
       HLSERVER_PORT: "${HLSERVER_PORT:-27015}"
       HLSERVER_MAP: "${HLSERVER_MAP:-stalkyard}"
       HLSERVER_MAXPLAYERS: "${HLSERVER_MAXPLAYERS:-16}"

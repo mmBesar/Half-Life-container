@@ -13,7 +13,8 @@ RUN set -eux; \
     *) echo "Unsupported arch: $TARGETPLATFORM" && exit 1 ;; \
   esac; \
   wget -O /tmp/xashds.tar.gz "$URL"; \
-  mkdir -p /xashds && tar -xzf /tmp/xashds.tar.gz -C /xashds && rm /tmp/xashds.tar.gz
+  mkdir -p /xashds && tar -xzf /tmp/xashds.tar.gz -C /xashds && rm /tmp/xashds.tar.gz; \
+  mv /xashds/xashds-linux-*/* /xashds
 
 FROM debian:bullseye-slim
 ARG UID=1000

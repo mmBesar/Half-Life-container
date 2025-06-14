@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  half-life:
+    image: ghcr.io/mmbesar/half-life:latest
+    container_name: half-life
+    networks:
+      - gaming
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      - "27015:27015/udp"  # Half-Life server port
+    volumes:
+      # Mount game data directories
+      - ${CONTAINER_DIR:-./data}/half-life/valve:/data/valve
+      - ${CONTAINER_DIR:-./data}/half-life/cstrike:/data/cstrike
+      - ${CONTAINER_DIR:-./data}/half-life/logs:/data/logs
+    environment:
+      # Core server settings
+      HLSERVER_PORT: 27015
+      HLSERVER_MAP: crossfire                    # Starting map
+      HLSERVER_MAXPLAYERS: 16
+      HLSERVER_HOSTNAME: "My Half-Life Server"
+      HLSERVER_GAME: valve                       # 'valve' for Half-Life, 'cstrike' for Counter-Strike
+      
+      # Optional password protection
+      HLSERVER_PASSWORD: ""                      # Server password (empty = no password)
+      HLSERVER_RCON_PASSWORD: "your_rcon_pass"   # RCON password for remote administration
+      
+      # Bot configuration
+      HLSERVER_BOTS: true                        # Enable/disable bots
+      HLSERVER_BOTS_COUNT: 8                     # Number of bots (when enabled)
+      
+      # Additional server arguments (optional)
+      HLSERVER_ADDITIONAL_ARGS: "+sv_cheats 0 +mp_timelimit 30"
+      
+      # User/Group IDs (for file permissions)
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+
+networks:
+  gaming:
+    driver: bridge
+
+# Example .env file contents:
+# PUID=1000
+# PGID=1000  
+# CONTAINER_DIR=./data
+# HS_NETWORK=gaming

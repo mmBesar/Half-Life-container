@@ -1,55 +1,200 @@
-name: Build Multi-arch Half-Life Server
+name: Build and Push Multi-Arch Container
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild (ignore cache)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/half-life
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up QEMU (for cross-building)
-      uses: docker/setup-qemu-action@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:master
+            network=host
 
-    - name: Log in to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata (GHCR tags/labels)
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: |
-          ghcr.io/${{ github.repository_owner }}/half-life
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix={{branch}}-
 
-    - name: Build and push image to GHCR
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          BUILDKIT_INLINE_CACHE=1
+      - name: Create entrypoint script
+        run: |
+          cat > entrypoint.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          # Function to log messages
+          log() {
+              echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+          }
+
+          # Create user and group if they don't exist
+          if ! getent group "$PGID" >/dev/null 2>&1; then
+              addgroup -g "$PGID" hlserver
+          fi
+
+          if ! getent passwd "$PUID" >/dev/null 2>&1; then
+              adduser -D -u "$PUID" -G "$(getent group "$PGID" | cut -d: -f1)" hlserver
+          fi
+
+          # Ensure directories exist and have correct permissions
+          mkdir -p /data/valve /data/cstrike /data/logs
+          chown -R "$PUID:$PGID" /data /opt/xash3d
+
+          # Generate server configuration
+          log "Generating server configuration..."
+
+          # Create server.cfg
+          cat > /data/${HLSERVER_GAME}/server.cfg << EOC
+          // Auto-generated Half-Life server configuration
+          hostname "${HLSERVER_HOSTNAME}"
+          maxplayers ${HLSERVER_MAXPLAYERS}
+          sv_lan 0
+          sv_region 255
+
+          // Network settings
+          net_address 0.0.0.0
+          port ${HLSERVER_PORT}
+
+          // Game settings
+          mp_timelimit 30
+          mp_fraglimit 50
+          mp_friendlyfire 0
+
+          // Bot settings
+          $(if [ "$HLSERVER_BOTS" = "true" ]; then
+              echo "bot_quota ${HLSERVER_BOTS_COUNT}"
+              echo "bot_auto_vacate 1"
+              echo "bot_join_after_player 1"
+          else
+              echo "bot_quota 0"
+          fi)
+
+          // RCON settings
+          $(if [ -n "$HLSERVER_RCON_PASSWORD" ]; then
+              echo "rcon_password \"${HLSERVER_RCON_PASSWORD}\""
+          fi)
+
+          // Server password
+          $(if [ -n "$HLSERVER_PASSWORD" ]; then
+              echo "sv_password \"${HLSERVER_PASSWORD}\""
+          fi)
+
+          // Log settings
+          log on
+          sv_logbans 1
+          sv_logecho 1
+          sv_logfile 1
+          sv_log_onefile 0
+
+          // Start map
+          map ${HLSERVER_MAP}
+          EOC
+
+          # Create startup script for xash3d
+          log "Starting Half-Life server..."
+          log "Game: ${HLSERVER_GAME}"
+          log "Map: ${HLSERVER_MAP}"
+          log "Port: ${HLSERVER_PORT}"
+          log "Max Players: ${HLSERVER_MAXPLAYERS}"
+          log "Bots Enabled: ${HLSERVER_BOTS}"
+          if [ "$HLSERVER_BOTS" = "true" ]; then
+              log "Bot Count: ${HLSERVER_BOTS_COUNT}"
+          fi
+
+          # Build command arguments
+          XASH_ARGS="-dedicated -port ${HLSERVER_PORT} -game ${HLSERVER_GAME} +map ${HLSERVER_MAP}"
+
+          # Add additional arguments if specified
+          if [ -n "$HLSERVER_ADDITIONAL_ARGS" ]; then
+              XASH_ARGS="${XASH_ARGS} ${HLSERVER_ADDITIONAL_ARGS}"
+          fi
+
+          # Switch to the specified user and start the server
+          exec su-exec "$PUID:$PGID" /opt/xash3d/xash3d $XASH_ARGS
+          EOF
+          chmod +x entrypoint.sh
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          no-cache: ${{ github.event.inputs.force_rebuild == 'true' }}
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Generate build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms**: linux/amd64, linux/arm64 (Pi4 compatible)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags**:" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" | sed 's/^/  - /' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Usage Example" >> $GITHUB_STEP_SUMMARY
+          echo '```yaml' >> $GITHUB_STEP_SUMMARY
+          echo 'services:' >> $GITHUB_STEP_SUMMARY
+          echo '  half-life:' >> $GITHUB_STEP_SUMMARY
+          echo '    image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest' >> $GITHUB_STEP_SUMMARY
+          echo '    ports:' >> $GITHUB_STEP_SUMMARY
+          echo '      - "27015:27015/udp"' >> $GITHUB_STEP_SUMMARY
+          echo '    environment:' >> $GITHUB_STEP_SUMMARY
+          echo '      HLSERVER_MAP: crossfire' >> $GITHUB_STEP_SUMMARY
+          echo '      HLSERVER_BOTS: true' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

@@ -1,4 +1,4 @@
-# Stage: builder
+# syntax=docker/dockerfile:1
 FROM debian:bullseye-slim AS builder
 
 RUN apt-get update \
@@ -7,16 +7,14 @@ RUN apt-get update \
 
 RUN set -eux; \
     LATEST_TAG=$(wget -qO- https://api.github.com/repos/FWGS/xash3d-fwgs/releases/latest | jq -r '.tag_name'); \
-    echo "Latest Xash3D release: $LATEST_TAG"; \
+    echo "Latest Xash3D release is $LATEST_TAG"; \
     DOWNLOAD_URL="https://github.com/FWGS/xash3d-fwgs/releases/download/${LATEST_TAG}/xash3d-fwgs-linux.tar.xz"; \
     wget -O /tmp/xash3d.tar.xz "$DOWNLOAD_URL"; \
     mkdir -p /xash3d; \
     tar -xJf /tmp/xash3d.tar.xz -C /xash3d; \
     rm /tmp/xash3d.tar.xz
 
-# Stage: runtime
 FROM debian:bullseye-slim
-
 ARG UID=1000
 ARG GID=1000
 

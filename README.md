@@ -1,101 +1,140 @@
-# ⚠️ Project Status: Work In Progress ⚠️
+# 🚧 Half-Life Server (Xash3D FWGS) Container
 
-> **This containerized Half-Life server is not ready for production use.**
-> It is under active development — expect breaking changes, missing features, and dragons. You’ve been warned.
-
----
-
-![Build](https://github.com/\${REPO_OWNER:-mmbesar}/half-life/actions/workflows/container-build.yml/badge.svg)
-
-# 🎮 Half-Life Dedicated Server in Docker
-
-This project builds a multi-architecture Docker container for running a dedicated Half-Life server using [Xash3D-FWGS](https://github.com/FWGS/xash3d-fwgs), targeting both AMD64 and ARM64 (e.g. Raspberry Pi 4).
+**⚠️ This project is under active development and not production-ready yet.**  
+Use it for testing, experimentation, and learning purposes.
 
 ---
 
-## ✨ Features
+## 🎮 Features
 
-* 📦 Fully containerized Half-Life server
-* 🔁 Multi-arch support: `linux/amd64`, `linux/arm64`
-* 👤 Runs as any UID\:GID via Docker Compose
-* 🔧 Configurable via environment variables
-* 🎯 Bots support (via server-side cvars)
-* 📡 Map control from environment or runtime
-
----
-
-## 🚀 Quick Start
-
-```bash
-git clone https://github.com/YOURUSER/half-life-server-docker.git
-cd half-life-server-docker
-docker-compose -f docker-compose.example.yml up -d
-```
-
-Ensure that your `valve/` directory contains the necessary game files.
+- ✅ Supports Xash3D-FWGS dedicated server
+- ✅ Multi-arch support: `amd64`, `arm64`, `i386`, `armhf`
+- ✅ Mount external `valve/`, `cstrike/`, `configs/`, `logs/`
+- ✅ Enable or disable bots using `liblist.gam`
+- ✅ Set map, port, IP, player count via environment variables
+- ✅ Optional host networking for true LAN discovery
+- ✅ RCON support with manual config
 
 ---
 
-## ⚙️ Environment Variables
+## 🏗️ Image Tags
 
-| Variable              | Default     | Description                 |
-| --------------------- | ----------- | --------------------------- |
-| `HLSERVER_PORT`       | `27015`     | Server UDP port             |
-| `HLSERVER_MAP`        | `stalkyard` | Default map                 |
-| `HLSERVER_MAXPLAYERS` | `16`        | Max number of players       |
-| `HLSERVER_BOTS`       | `true`      | Enable bots (server-side)   |
-| `HLSERVER_BOTS_COUNT` | `10`        | Number of bots (if enabled) |
+| Arch   | Docker Tag                                   |
+|--------|----------------------------------------------|
+| amd64  | `ghcr.io/youruser/half-life:latest-amd64`    |
+| arm64  | `ghcr.io/youruser/half-life:latest-arm64`    |
+| i386   | `ghcr.io/youruser/half-life:latest-i386`     |
+| armhf  | `ghcr.io/youruser/half-life:latest-armhf`    |
+
+Replace `youruser` with your GHCR username or organization.
 
 ---
 
-## 📁 Volume Mounts
+## 🧠 Bot Support
+
+Mount two files inside `/data/configs/`:
+
+- `liblist.clean.gam` → no bots
+- `liblist.bots.gam`  → bots enabled
+
+Enable bots using:
 
 ```yaml
-volumes:
-  - ./valve:/data/valve
-  - ./logs:/data/logs
+environment:
+  HLSERVER_BOTS: true
+````
+
+---
+
+## 🔧 Example `docker-compose.yml` (host mode)
+
+```yaml
+services:
+  half-life:
+    image: ghcr.io/youruser/half-life:latest-amd64
+    container_name: half-life
+    network_mode: host  # Enables LAN discovery
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    volumes:
+      - ${CONTAINER_DIR}/half-life/valve:/data/valve
+      - ${CONTAINER_DIR}/half-life/cstrike:/data/cstrike
+      - ${CONTAINER_DIR}/half-life/logs:/data/logs
+      - ${CONTAINER_DIR}/half-life/configs:/data/configs:ro
+    environment:
+      HLSERVER_IP: 0.0.0.0
+      HLSERVER_GAME: valve
+      HLSERVER_PORT: 27015
+      HLSERVER_MAP: stalkyard
+      HLSERVER_MAXPLAYERS: 16
+      HLSERVER_BOTS: false
 ```
 
-Ensure you provide valid game content under `valve/`.
+> ❗ Ports section is not needed in `host` mode.
+> If using `bridge` mode, manually expose all relevant UDP ports.
 
 ---
 
-## 🏗 CI/CD
+## 🧱 Architecture Requirements
 
-This project uses GitHub Actions to build and publish multi-arch Docker images to GitHub Container Registry:
+### ✅ For `amd64`:
 
-```text
-ghcr.io/<repo-owner>/half-life:latest
+* Use `valve/dlls/hl.so` compiled for 64-bit Linux (x86\_64)
+
+### ✅ For `arm64` (e.g. Raspberry Pi 4):
+
+* Build `hl.so` and `client.so` using [FWGS/hlsdk-portable](https://github.com/FWGS/hlsdk-portable)
+* Place them in `valve/dlls/` and `valve/cl_dlls/`
+
+### ✅ For `i386` and `armhf`:
+
+* Requires matching 32-bit `.so` game DLLs
+
+---
+
+## 🕹️ Connecting to the Server
+
+### A. 📡 LAN Discovery (in-game browser)
+
+* Requires `network_mode: host`
+* `sv_lan 1` must be set in `server.cfg`
+
+### B. 🖥️ Manual Connect
+
+Open game console and run:
+
+```
+connect 192.168.100.51:27015
 ```
 
-### Automated Releases
+To enable console:
 
-* Pushing a new tag (e.g., `v1.0.0`) will:
-
-  * Build and push multi-arch images
-  * Create a GitHub release based on that tag
+* Steam → Properties → Launch Options: `-console`
+* Or bind a key in-game (Keyboard → Advanced)
 
 ---
 
-## 🧪 TODO
+## 🔒 Networking Notes
 
-* [ ] Validate ARM64 performance on Pi4
-* [ ] RCON support or map rotation tool
-* [ ] Auto-downloading maps/mods
-* [ ] Bot plugin modularization
+Ports used by default:
 
----
+* `27015/udp` — main game server port
+* `27005/udp`, `27025/udp`, `47584/udp|tcp` — optional/extras
 
-## 🤝 Contributions
-
-PRs welcome, especially for:
-
-* Better mod integration
-* Entry-point enhancements
-* Networking or monitoring support
+In `host` mode, you do **not** need to expose ports manually.
 
 ---
 
-## 📜 License
+## 🛠️ Troubleshooting
 
-MIT — See [LICENSE](./LICENSE)
+* ❌ `game directory "valve" not exist` → Ensure working dir is `/data` and mounted correctly
+* ❌ `couldn't get physics API` → Use a compatible architecture-specific `hl.so`
+* ❌ Can't see server in game browser → Use `network_mode: host` or `connect` by IP
+
+---
+
+## 📦 Optional Extras
+
+* `liblist.gam` bot control via ENV
+* RCON via `rcon_password` in `server.cfg`
+* Future enhancement: `socat`-based UDP rebroadcast for bridge mode LAN discovery

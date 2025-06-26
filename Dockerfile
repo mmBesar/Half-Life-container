@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS builder
+FROM ubuntu:24.04 AS builder
 
 ARG BASE_ARCH=amd64
 

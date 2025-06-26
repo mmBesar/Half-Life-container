@@ -3,7 +3,7 @@
 ###################################
 # → builder: fetch & unpack binary
 ###################################
-FROM ubuntu:24.04-slim AS builder
+FROM ubuntu:noble AS builder
 
 # Docker buildkit supplies TARGETPLATFORM in the form "linux/amd64", "linux/arm64", "linux/arm/v7", "linux/386"
 ARG TARGETPLATFORM
@@ -32,7 +32,7 @@ RUN set -eux; \
 ###################################
 # → runtime: minimal Ubuntu + user
 ###################################
-FROM ubuntu:24.04-slim
+FROM ubuntu:noble
 
 ARG UID=1000
 ARG GID=1000

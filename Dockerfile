@@ -1,54 +1,61 @@
 # syntax=docker/dockerfile:1.4
 
 ########################################
-# builder: clone FWGS and compile xashds
+# 1) builder: clone FWGS & compile server
 ########################################
 FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV CC=clang
-ENV CXX=clang++
 
+# install build tools + waf prerequisites
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates git cmake ninja-build clang \
-      pkg-config libcurl4-openssl-dev zlib1g-dev \
+      ca-certificates \
+      git \
+      python3 \
+      pkg-config \
+      build-essential \
+      gcc \
+      g++ \
+      zlib1g-dev \
+      libcurl4-openssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
+# grab the full repository (includes 'waf' and 'wscript')
 RUN git clone --depth 1 https://github.com/FWGS/xash3d-fwgs.git .
 
-WORKDIR /src/build
-RUN cmake -G Ninja \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DXASH_SDL=OFF \
-      -DXASH_VGUI=OFF \
-      -DXASH_CLIENT=OFF \
-      -DXASH_XASHDC=OFF \
-      -DCMAKE_INSTALL_PREFIX=/opt/xashds \
-      .. \
- && ninja install
+# configure & build *only* the dedicated server
+RUN chmod +x ./waf && \
+    # -T release → optimized release build
+    # -8         → build 64-bit engine on x86 hosts
+    ./waf configure -T release --prefix=/opt/xashds -8 && \
+    ./waf build && \
+    ./waf install
 
 ########################################
-# ← runtime: minimal Ubuntu + hl user
+# 2) runtime: minimal Ubuntu + hl user
 ########################################
-FROM ubuntu:24.04 AS runtime
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1) update & install runtime deps
+# update & install just the runtime deps
 RUN apt-get \
       -o Acquire::AllowReleaseInfoChange::Suite=true \
       -o Acquire::AllowReleaseInfoChange::Codename=true \
       update \
  && apt-get install -y --no-install-recommends \
-      libcurl4 ca-certificates tini adduser \
+      libcurl4 \
+      ca-certificates \
+      tini \
+      adduser \
  && rm -rf /var/lib/apt/lists/*
 
-# 2) create an unprivileged 'hl' user (and group) with default UID/GID
+# create an unprivileged 'hl' user (and matching group)
 RUN adduser --disabled-password --gecos '' hl
 
-# 3) copy in the compiled server
+# copy the freshly-built server into place
 COPY --from=builder /opt/xashds /opt/xashds
 
 WORKDIR /data
@@ -57,4 +64,5 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER hl
 ENV XASH3D_BASE=/opt/xashds
+
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

@@ -15,12 +15,6 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libc6-dev \
-    libfreetype6-dev \
-    libopus-dev \
-    libbz2-dev \
-    libvorbis-dev \
-    libopusfile-dev \
-    libogg-dev \
     pkg-config \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -32,26 +26,31 @@ WORKDIR /build
 RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git .
 
 # Configure the build for dedicated server only
-# The --dedicated flag tells WAF to build without SDL2 dependencies (server only)
-# The -8 flag builds 64-bit on x86_64, omit for 32-bit
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        ./waf configure --dedicated --build-type=release -8; \
-    else \
-        ./waf configure --dedicated --build-type=release; \
-    fi
+# The --dedicated flag builds server without SDL2 dependencies
+# -T release sets release build type
+# -8 builds 64-bit on x86_64 architecture
+RUN case "$TARGETARCH" in \
+        amd64) ./waf configure --dedicated -T release -8 ;; \
+        arm64) ./waf configure --dedicated -T release ;; \
+        *) ./waf configure --dedicated -T release ;; \
+    esac
 
 # Build the project
 RUN ./waf build
 
-# Install to a clean directory structure similar to official releases
-RUN ./waf install --destdir=/tmp/install && \
-    mkdir -p /xashds && \
-    # Find the main executable and copy it as 'xash' to match your entrypoint
-    find /tmp/install -name "xash3d" -type f -exec cp {} /xashds/xash \; && \
-    # Copy any shared libraries
-    find /tmp/install -name "*.so" -type f -exec cp {} /xashds/ \; && \
-    # Make sure the main executable is executable
-    chmod +x /xashds/xash
+# Install to a temporary directory
+RUN ./waf install --destdir=/tmp/install
+
+# Prepare final directory structure
+RUN mkdir -p /xashds && \
+    # Find and copy the main executable
+    find /tmp/install -name "xash3d" -type f -executable -exec cp {} /xashds/xash3d \; && \
+    # Copy any shared libraries that might be needed
+    find /tmp/install -name "*.so" -type f -exec cp {} /xashds/ \; 2>/dev/null || true && \
+    # Make sure the executable is properly executable
+    chmod +x /xashds/xash3d && \
+    # List what we have for debugging
+    ls -la /xashds/
 
 # Final runtime stage
 FROM ubuntu:24.04
@@ -62,22 +61,18 @@ ARG GID=1000
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies - simplified approach
+# Install minimal runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
-        libfreetype6 \
-        libopus0 \
-        libbz2-1.0 \
-        libvorbis0a \
-        libopusfile0 \
-        libogg0 \
+        libc6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user and group
-RUN groupadd -g "$GID" hl && useradd -m -u "$UID" -g hl hl
+# Create user and group (fix the variable expansion issue)
+RUN groupadd -g ${GID} hl && \
+    useradd -m -u ${UID} -g hl hl
 
-# Copy the built binaries from builder stage (matching your original structure)
+# Copy the built binaries from builder stage
 COPY --from=builder /xashds /opt/xashds
 
 # Set working directory and copy entrypoint
@@ -88,8 +83,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Switch to non-root user
 USER hl
 
-# Environment variables (matching your original)
+# Environment variables
 ENV XASH3D_BASE=/opt/xashds
 
-# Use your existing entrypoint
+# Use the entrypoint
 ENTRYPOINT ["entrypoint.sh"]

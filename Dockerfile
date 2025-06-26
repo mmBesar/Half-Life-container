@@ -1,30 +1,47 @@
-FROM debian:trixie-slim AS builder
+# syntax=docker/dockerfile:1.4
 
-ARG BASE_ARCH=amd64
+###################################
+# → builder: fetch & unpack binary
+###################################
+FROM ubuntu:24.04-slim AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates tar gzip && \
-    rm -rf /var/lib/apt/lists/*
+# Docker buildkit supplies TARGETPLATFORM in the form "linux/amd64", "linux/arm64", "linux/arm/v7", "linux/386"
+ARG TARGETPLATFORM
 
+# install minimal tooling
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wget ca-certificates tar gzip \
+ && rm -rf /var/lib/apt/lists/*
+
+# pick the right ARCH suffix and download
 RUN set -eux; \
-  case "$BASE_ARCH" in \
-    amd64)  URL="https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xashds-linux-amd64.tar.gz" ;; \
-    arm64)  URL="https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xashds-linux-arm64.tar.gz" ;; \
-    i386)   URL="https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xashds-linux-i386.tar.gz" ;; \
-    armhf)  URL="https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xashds-linux-armhf.tar.gz" ;; \
-    *) echo "Unsupported BASE_ARCH: $BASE_ARCH" && exit 1 ;; \
-  esac; \
-  wget -O /tmp/xashds.tar.gz "$URL"; \
-  mkdir -p /xashds && tar -xzf /tmp/xashds.tar.gz -C /xashds && rm /tmp/xashds.tar.gz; \
-  mv /xashds/xashds-linux-*/* /xashds
+    case "$TARGETPLATFORM" in \
+      "linux/amd64") ARCH=amd64 ;; \
+      "linux/arm64") ARCH=arm64 ;; \
+      "linux/arm/v7") ARCH=armhf ;; \
+      "linux/386")    ARCH=i386 ;; \
+      *) echo "Unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
+    esac; \
+    URL="https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xashds-linux-${ARCH}.tar.gz"; \
+    wget -O /tmp/xashds.tar.gz "$URL"; \
+    mkdir -p /xashds; \
+    tar -xzf /tmp/xashds.tar.gz -C /xashds; \
+    rm /tmp/xashds.tar.gz; \
+    mv /xashds/xashds-linux-*/* /xashds
 
-FROM debian:bookworm-slim
+###################################
+# → runtime: minimal Ubuntu + user
+###################################
+FROM ubuntu:24.04-slim
 
 ARG UID=1000
 ARG GID=1000
 
-RUN apt-get update && apt-get install -y --no-install-recommends libcurl4 ca-certificates && \
-    groupadd -g "$GID" hl && useradd -m -u "$UID" -g hl hl && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libcurl4 ca-certificates \
+ && groupadd -g "$GID" hl \
+ && useradd -m -u "$UID" -g hl hl \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /xashds /opt/xashds
 WORKDIR /data
@@ -33,4 +50,5 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER hl
 ENV XASH3D_BASE=/opt/xashds
+
 ENTRYPOINT ["entrypoint.sh"]

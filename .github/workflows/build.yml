@@ -1,319 +1,144 @@
-name: Build Xash3D Server and HLSDK
+name: Build Xash3D Server & HLSDK
 
 on:
-  push:
-    branches: [ main, master ]
-    tags: [ 'v*' ]
-  pull_request:
-    branches: [ main, master ]
-  schedule:
-    # Build weekly to catch upstream changes
-    - cron: '0 0 * * 0'
+  push: { branches: [main, master], tags: ['v*'] }
+  pull_request: { branches: [main, master] }
+  schedule: [{ cron: '0 0 * * 0' }]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/xash3d-server
 
 jobs:
-  # Build HLSDK master branch releases
-  build-hlsdk-master:
+  hlsdk-master:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # Start with amd64 only, uncomment arm64 later
-        arch: [amd64]
-        # arch: [amd64, arm64]
-    
+    strategy: { matrix: { arch: [amd64] } }
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-      if: matrix.arch == 'arm64'
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Cache Docker layers
-      uses: actions/cache@v3
-      with:
-        path: /tmp/.buildx-cache-hlsdk-master-${{ matrix.arch }}
-        key: ${{ runner.os }}-buildx-hlsdk-master-${{ matrix.arch }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-hlsdk-master-${{ matrix.arch }}-
-    
-    - name: Build HLSDK master for ${{ matrix.arch }}
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/${{ matrix.arch }}
-        target: hlsdk-master-builder
-        outputs: type=local,dest=./hlsdk-master-${{ matrix.arch }}
-        cache-from: type=local,src=/tmp/.buildx-cache-hlsdk-master-${{ matrix.arch }}
-        cache-to: type=local,dest=/tmp/.buildx-cache-hlsdk-master-${{ matrix.arch }}-new,mode=max
-    
-    - name: Extract HLSDK master binaries
-      run: |
-        mkdir -p releases/hlsdk-master
-        cp hlsdk-master-${{ matrix.arch }}/build/hlsdk-master/build/dlls/hl.so releases/hlsdk-master/hl_${{ matrix.arch }}.so
-        cp hlsdk-master-${{ matrix.arch }}/build/hlsdk-master/build/cl_dll/client.so releases/hlsdk-master/client_${{ matrix.arch }}.so
-    
-    - name: Upload HLSDK master artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: hlsdk-master-${{ matrix.arch }}
-        path: releases/hlsdk-master/
-    
-    - name: Move cache
-      run: |
-        rm -rf /tmp/.buildx-cache-hlsdk-master-${{ matrix.arch }}
-        mv /tmp/.buildx-cache-hlsdk-master-${{ matrix.arch }}-new /tmp/.buildx-cache-hlsdk-master-${{ matrix.arch }}
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Cache
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.bldx-hlsdk-master-${{ matrix.arch }}
+          key: ${{ runner.os }}-hlsdk-master-${{ matrix.arch }}-${{ github.sha }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          target: hlsdk-master-builder
+          outputs: type=local,dest=./artifacts/hlsdk-master-${{ matrix.arch }}
+          cache-from: type=local,src=/tmp/.bldx-hlsdk-master-${{ matrix.arch }}
+          cache-to: type=local,dest=/tmp/.bldx-hlsdk-master-${{ matrix.arch }}-new,mode=max
+      - run: |
+          mkdir -p releases/hlsdk-master
+          cp artifacts/hlsdk-master-${{ matrix.arch }}/build/hl.so releases/hlsdk-master/hl_${{ matrix.arch }}.so
+          cp artifacts/hlsdk-master-${{ matrix.arch }}/build/cl_dll/client.so releases/hlsdk-master/client_${{ matrix.arch }}.so
+      - uses: actions/upload-artifact@v3
+        with: name: hlsdk-master-${{ matrix.arch }}; path: releases/hlsdk-master/
 
-  # Build HLSDK bot10 branch releases
-  build-hlsdk-bot10:
+  hlsdk-bot10:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # Start with amd64 only, uncomment arm64 later
-        arch: [amd64]
-        # arch: [amd64, arm64]
-    
+    strategy: { matrix: { arch: [amd64] } }
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-      if: matrix.arch == 'arm64'
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Cache Docker layers
-      uses: actions/cache@v3
-      with:
-        path: /tmp/.buildx-cache-hlsdk-bot10-${{ matrix.arch }}
-        key: ${{ runner.os }}-buildx-hlsdk-bot10-${{ matrix.arch }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-hlsdk-bot10-${{ matrix.arch }}-
-    
-    - name: Build HLSDK bot10 for ${{ matrix.arch }}
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/${{ matrix.arch }}
-        target: hlsdk-bot10-builder
-        outputs: type=local,dest=./hlsdk-bot10-${{ matrix.arch }}
-        cache-from: type=local,src=/tmp/.buildx-cache-hlsdk-bot10-${{ matrix.arch }}
-        cache-to: type=local,dest=/tmp/.buildx-cache-hlsdk-bot10-${{ matrix.arch }}-new,mode=max
-    
-    - name: Extract HLSDK bot10 binaries
-      run: |
-        mkdir -p releases/hlsdk-bot10
-        cp hlsdk-bot10-${{ matrix.arch }}/build/hlsdk-bot10/build/dlls/hl.so releases/hlsdk-bot10/bot_${{ matrix.arch }}.so
-    
-    - name: Upload HLSDK bot10 artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: hlsdk-bot10-${{ matrix.arch }}
-        path: releases/hlsdk-bot10/
-    
-    - name: Move cache
-      run: |
-        rm -rf /tmp/.buildx-cache-hlsdk-bot10-${{ matrix.arch }}
-        mv /tmp/.buildx-cache-hlsdk-bot10-${{ matrix.arch }}-new /tmp/.buildx-cache-hlsdk-bot10-${{ matrix.arch }}
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/cache@v3
+        with:
+          path: /tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}
+          key: ${{ runner.os }}-hlsdk-bot10-${{ matrix.arch }}-${{ github.sha }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          target: hlsdk-bot10-builder
+          outputs: type=local,dest=./artifacts/hlsdk-bot10-${{ matrix.arch }}
+          cache-from: type=local,src=/tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}
+          cache-to: type=local,dest=/tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}-new,mode=max
+      - run: |
+          mkdir -p releases/hlsdk-bot10
+          cp artifacts/hlsdk-bot10-${{ matrix.arch }}/build/hl.so releases/hlsdk-bot10/bot_${{ matrix.arch }}.so
+      - uses: actions/upload-artifact@v3
+        with: name: hlsdk-bot10-${{ matrix.arch }}; path: releases/hlsdk-bot10/
 
-  # Build and push Docker image
-  build-docker:
+  docker:
     runs-on: ubuntu-latest
-    needs: [build-hlsdk-master, build-hlsdk-bot10]
-    strategy:
-      matrix:
-        # Start with amd64 only, uncomment arm64 later
-        arch: [amd64]
-        # arch: [amd64, arm64]
-    
+    needs: [hlsdk-master, hlsdk-bot10]
+    strategy: { matrix: { arch: [amd64] } }
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-      if: matrix.arch == 'arm64'
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-    
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v4
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=raw,value=latest,enable={{is_default_branch}}
-    
-    - name: Cache Docker layers
-      uses: actions/cache@v3
-      with:
-        path: /tmp/.buildx-cache-${{ matrix.arch }}
-        key: ${{ runner.os }}-buildx-${{ matrix.arch }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-${{ matrix.arch }}-
-    
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        platforms: linux/${{ matrix.arch }}
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}-${{ matrix.arch }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.arch }}
-        cache-to: type=local,dest=/tmp/.buildx-cache-${{ matrix.arch }}-new,mode=max
-    
-    - name: Move cache
-      run: |
-        rm -rf /tmp/.buildx-cache-${{ matrix.arch }}
-        mv /tmp/.buildx-cache-${{ matrix.arch }}-new /tmp/.buildx-cache-${{ matrix.arch }}
-    
-    outputs:
-      image-digest: ${{ steps.build.outputs.digest }}
-      image-metadata: ${{ steps.build.outputs.metadata }}
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: actions/cache@v3
+        with: path: /tmp/.bldx-${{ matrix.arch }}; key: ${{ runner.os }}-bldx-${{ matrix.arch }}-${{ github.sha }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}-${{ matrix.arch }
+          cache-from: type=local,src=/tmp/.bldx-${{ matrix.arch }}
+          cache-to: type=local,dest=/tmp/.bldx-${{ matrix.arch }}-new,mode=max
+      - run: |
+          rm -rf /tmp/.bldx-${{ matrix.arch }}
+          mv /tmp/.bldx-${{ matrix.arch }}-new /tmp/.bldx-${{ matrix.arch }}
 
-  # Create multi-arch manifest (currently single arch)
-  create-manifest:
+  manifest:
     runs-on: ubuntu-latest
-    needs: [build-docker]
+    needs: [docker]
     if: github.event_name != 'pull_request'
-    
     steps:
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v4
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=raw,value=latest,enable={{is_default_branch}}
-    
-    - name: Create and push manifest
-      run: |
-        # For now, just create manifest for amd64
-        # When arm64 is ready, uncomment the second line
-        for tag in ${{ steps.meta.outputs.tags }}; do
-          docker manifest create $tag $tag-amd64
-          # docker manifest create $tag $tag-amd64 $tag-arm64
-          docker manifest push $tag
-        done
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - run: |
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            docker manifest create $tag $tag-amd64
+            docker manifest push $tag
+          done
 
-  # Create GitHub releases
-  create-release:
+  release:
     runs-on: ubuntu-latest
-    needs: [build-hlsdk-master, build-hlsdk-bot10]
+    needs: [hlsdk-master, hlsdk-bot10]
     if: startsWith(github.ref, 'refs/tags/v')
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-    
-    - name: Download HLSDK master artifacts
-      uses: actions/download-artifact@v3
-      with:
-        name: hlsdk-master-amd64
-        path: releases/hlsdk-master/
-    
-    # Uncomment when arm64 is ready
-    # - name: Download HLSDK master arm64 artifacts
-    #   uses: actions/download-artifact@v3
-    #   with:
-    #     name: hlsdk-master-arm64
-    #     path: releases/hlsdk-master/
-    
-    - name: Download HLSDK bot10 artifacts
-      uses: actions/download-artifact@v3
-      with:
-        name: hlsdk-bot10-amd64
-        path: releases/hlsdk-bot10/
-    
-    # Uncomment when arm64 is ready
-    # - name: Download HLSDK bot10 arm64 artifacts
-    #   uses: actions/download-artifact@v3
-    #   with:
-    #     name: hlsdk-bot10-arm64
-    #     path: releases/hlsdk-bot10/
-    
-    - name: Create HLSDK master release archive
-      run: |
-        cd releases/hlsdk-master
-        tar -czf ../hlsdk-master-${{ github.ref_name }}.tar.gz *
-    
-    - name: Create HLSDK bot10 release archive
-      run: |
-        cd releases/hlsdk-bot10
-        tar -czf ../hlsdk-bot10-${{ github.ref_name }}.tar.gz *
-    
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          releases/hlsdk-master-${{ github.ref_name }}.tar.gz
-          releases/hlsdk-bot10-${{ github.ref_name }}.tar.gz
-        body: |
-          ## Xash3D Server Release ${{ github.ref_name }}
-          
-          This release includes:
-          
-          ### Docker Image
-          - Multi-architecture Docker image: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}`
-          - Pull with: `docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}`
-          
-          ### HLSDK Master Branch
-          - `hl_amd64.so` - Server library (amd64)
-          - `client_amd64.so` - Client library (amd64)
-          
-          ### HLSDK Bot10 Branch  
-          - `bot_amd64.so` - Server library with bot support (amd64)
-          
-          ### Usage
-          ```bash
-          # Run with master branch (default)
-          docker run -p 27015:27015/udp ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          
-          # Run with bot10 branch
-          docker run -p 27015:27015/udp -e HLSDK_BRANCH=bot10 -e HLSERVER_BOTS=true ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
-          ```
-          
-          ### Environment Variables
-          - `HLSDK_BRANCH`: `master` or `bot10` (default: `master`)
-          - `HLSERVER_PORT`: Server port (default: `27015`)
-          - `HLSERVER_IP`: Server IP (default: `0.0.0.0`)
-          - `HLSERVER_MAP`: Starting map (default: `stalkyard`)
-          - `HLSERVER_MAXPLAYERS`: Max players (default: `16`)
-          - `HLSERVER_BOTS`: Enable bots (default: `false`)
-          - `HLSERVER_GAME`: Game directory (default: `valve`)
-        draft: false
-        prerelease: false
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v3
+        with: name: hlsdk-master-amd64; path: releases/hlsdk-master/
+      - uses: actions/download-artifact@v3
+        with: name: hlsdk-bot10-amd64; path: releases/hlsdk-bot10/
+      - name: Archive artifacts
+        run: |
+          cd releases/hlsdk-master; tar -czf ../hlsdk-master-${{ github.ref_name }}.tar.gz *
+          cd ../hlsdk-bot10; tar -czf ../hlsdk-bot10-${{ github.ref_name }}.tar.gz *
+      - uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            releases/hlsdk-master-${{ github.ref_name }}.tar.gz
+            releases/hlsdk-bot10-${{ github.ref_name }}.tar.gz
+          body: |
+            ## Xash3D Server ${{ github.ref_name }}
+            Includes multi‑arch Docker image & HLSDK .so's.
+            Master: hl_amd64.so, client_amd64.so
+            Bot10: bot_amd64.so

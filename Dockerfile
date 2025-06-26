@@ -65,10 +65,6 @@ RUN apt-get update && \
         libc6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user and group with fixed IDs
-RUN groupadd -g 1000 hl && \
-    useradd -m -u 1000 -g hl hl
-
 # Copy the built binaries from builder stage
 COPY --from=builder /xashds /opt/xashds
 
@@ -76,9 +72,6 @@ COPY --from=builder /xashds /opt/xashds
 WORKDIR /data
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Switch to non-root user
-USER hl
 
 # Environment variables
 ENV XASH3D_BASE=/opt/xashds

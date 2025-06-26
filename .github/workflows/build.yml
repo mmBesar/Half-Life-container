@@ -114,7 +114,7 @@ jobs:
         cp hlsdk-bot10-${{ matrix.arch }}/build/hlsdk-bot10/build/dlls/hl.so releases/hlsdk-bot10/bot_${{ matrix.arch }}.so
     
     - name: Upload HLSDK bot10 artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: hlsdk-bot10-${{ matrix.arch }}
         path: releases/hlsdk-bot10/

@@ -1,288 +1,166 @@
-name: Build Xash3D Server & HLSDK Libraries
-
-permissions:
-  contents: write
-  packages: write
+name: Build and Release HLSDK
 
 on:
   push:
-    branches: [ main, master ]
-    paths:
-      - '.github/workflows/**'
-      - 'Dockerfile'
-      - 'entrypoint.sh'
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
     inputs:
-      create_releases:
-        description: 'Create GitHub releases for HLSDK libraries'
+      create_release:
+        description: 'Create a new release'
         required: false
         default: false
         type: boolean
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-  # 1) Build container images for each architecture
-  build-images:
+  build-libraries:
+    name: Build HLSDK Libraries
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [amd64, arm64]
-    outputs:
-      image_name: ${{ steps.lowercase.outputs.image_name }}
+        branch: [master, bot10]
+        arch: [amd64]  # Start with amd64 only as requested
+    
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Register QEMU for emulation
-        uses: docker/setup-qemu-action@v3
+      - name: Build libraries
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: builder
+          build-args: |
+            HLSERVER_BRANCH=${{ matrix.branch }}
+            TARGETARCH=${{ matrix.arch }}
+          outputs: type=local,dest=./output
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Log in to GHCR
+      - name: List built files
+        run: ls -la ./output/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hlsdk-${{ matrix.branch }}-${{ matrix.arch }}
+          path: ./output/
+          retention-days: 7
+
+  build-container:
+    name: Build Container Images
+    runs-on: ubuntu-latest
+    needs: build-libraries
+    strategy:
+      matrix:
+        branch: [master, bot10]
+        arch: [amd64]  # Start with amd64 only
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute lowercase image name
-        id: lowercase
-        run: |
-          IMAGE=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')
-          echo "image_name=$IMAGE" >> $GITHUB_OUTPUT
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.branch }}-${{ matrix.arch }}
+            type=ref,event=pr,suffix=-${{ matrix.branch }}-${{ matrix.arch }}
+            type=semver,pattern={{version}},suffix=-${{ matrix.branch }}-${{ matrix.arch }}
+            type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.branch }}-${{ matrix.arch }}
+            type=raw,value=latest,suffix=-${{ matrix.branch }}-${{ matrix.arch }},enable={{is_default_branch}}
 
-      - name: Build & push ${{ matrix.arch }}
+      - name: Build and push container image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/${{ matrix.arch }}
-          push: true
-          tags: |
-            ghcr.io/${{ steps.lowercase.outputs.image_name }}:latest-${{ matrix.arch }}
-            ghcr.io/${{ steps.lowercase.outputs.image_name }}:${{ github.sha }}-${{ matrix.arch }}
+          build-args: |
+            HLSERVER_BRANCH=${{ matrix.branch }}
+            TARGETARCH=${{ matrix.arch }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # 2) Create multi-arch manifest for container
-  create-manifest:
-    needs: build-images
+  create-release:
+    name: Create Release
     runs-on: ubuntu-latest
+    needs: build-libraries
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+    
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create multi-arch manifest
-        run: |
-          IMAGE=${{ needs.build-images.outputs.image_name }}
-          docker buildx imagetools create \
-            --tag ghcr.io/$IMAGE:latest \
-            --tag ghcr.io/$IMAGE:${{ github.sha }} \
-            ghcr.io/$IMAGE:latest-amd64 \
-            ghcr.io/$IMAGE:latest-arm64
-
-  # 3) Extract HLSDK libraries from built images for releases
-  extract-libraries:
-    needs: build-images
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract libraries from ${{ matrix.arch }} image
-        run: |
-          IMAGE=${{ needs.build-images.outputs.image_name }}
-          
-          # Create a temporary container to extract files
-          docker create --name temp-${{ matrix.arch }} ghcr.io/$IMAGE:latest-${{ matrix.arch }}
-          
-          # Extract HLSDK libraries
-          mkdir -p artifacts/${{ matrix.arch }}
-          docker cp temp-${{ matrix.arch }}:/opt/hlsdk-libs/ artifacts/${{ matrix.arch }}/
-          
-          # Clean up
-          docker rm temp-${{ matrix.arch }}
-          
-          # List what we extracted
-          echo "=== Extracted Libraries for ${{ matrix.arch }} ==="
-          find artifacts/${{ matrix.arch }} -type f -exec ls -la {} \;
-
-      - name: Upload ${{ matrix.arch }} libraries
-        uses: actions/upload-artifact@v4
-        with:
-          name: hlsdk-libs-${{ matrix.arch }}
-          path: artifacts/${{ matrix.arch }}/hlsdk-libs/
-          retention-days: 30
-
-  # 4) Create releases for HLSDK libraries
-  create-releases:
-    needs: [extract-libraries]
-    runs-on: ubuntu-latest
-    if: github.event.inputs.create_releases == 'true' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
-    steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Download all library artifacts
+        
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: hlsdk-libs-*
-          merge-multiple: true
+          path: ./releases
 
-      - name: Organize release packages
+      - name: Organize release files
         run: |
-          mkdir -p releases/{master,bot10}
+          mkdir -p ./release-files
           
-          # Create master branch release (standard Half-Life)
-          if ls hl_master_*.so 1> /dev/null 2>&1; then
-            cp hl_master_amd64.so releases/master/hl_amd64.so 2>/dev/null || true
-            cp hl_master_arm64.so releases/master/hl_arm64.so 2>/dev/null || true
-            cp client_master_amd64.so releases/master/client_amd64.so 2>/dev/null || true
-            cp client_master_arm64.so releases/master/client_arm64.so 2>/dev/null || true
-            
-            # Create master README
-            cat > releases/master/README.md << 'EOF'
-          # Half-Life SDK Libraries (Master Branch)
-          
-          Standard Half-Life server and client libraries built from HLSDK-Portable master branch.
-          
-          ## Files:
-          - `hl_amd64.so` - AMD64 server library
-          - `hl_arm64.so` - ARM64 server library  
-          - `client_amd64.so` - AMD64 client library
-          - `client_arm64.so` - ARM64 client library
-          
-          ## Usage:
-          1. Copy the appropriate `hl_*.so` to your Half-Life mod's `dlls/` directory
-          2. Copy the appropriate `client_*.so` to your mod's `cl_dlls/` directory
-          3. Rename files to `hl.so` and `client.so` respectively if needed
-          
-          Compatible with Xash3D FWGS engine.
-          EOF
-            
-            cd releases/master && tar -czf ../hlsdk-master-$(date +%Y%m%d).tar.gz . && cd ../..
+          # Process master branch files
+          if [ -d "./releases/hlsdk-master-amd64" ]; then
+            cp ./releases/hlsdk-master-amd64/* ./release-files/ 2>/dev/null || true
           fi
           
-          # Create bot10 branch release (with AI bots)
-          if ls hl_bot_*.so 1> /dev/null 2>&1; then
-            cp hl_bot_amd64.so releases/bot10/hl_amd64.so 2>/dev/null || true
-            cp hl_bot_arm64.so releases/bot10/hl_arm64.so 2>/dev/null || true
-            
-            # Also provide standard naming
-            cp hl_bot_amd64.so releases/bot10/bot_amd64.so 2>/dev/null || true
-            cp hl_bot_arm64.so releases/bot10/bot_arm64.so 2>/dev/null || true
-            
-            # Create bot10 README
-            cat > releases/bot10/README.md << 'EOF'
-          # Half-Life Bot Libraries (Bot10 Branch)
-          
-          Half-Life server libraries with integrated bot AI, built from HLSDK-Portable bot10 branch.
-          
-          ## Files:
-          - `hl_amd64.so` / `bot_amd64.so` - AMD64 server library with bots
-          - `hl_arm64.so` / `bot_arm64.so` - ARM64 server library with bots
-          
-          ## Usage:
-          1. Copy the appropriate library to your Half-Life mod's `dlls/` directory
-          2. Rename to `hl.so` if needed
-          3. Start your server - bots are now available!
-          
-          ## Bot Commands:
-          - `bot_add` - Add a bot to the game
-          - `bot_kick` - Remove bots
-          - `bot_quota <number>` - Set maximum number of bots
-          
-          Compatible with Xash3D FWGS engine.
-          EOF
-            
-            cd releases/bot10 && tar -czf ../hlsdk-bot10-$(date +%Y%m%d).tar.gz . && cd ../..
+          # Process bot10 branch files  
+          if [ -d "./releases/hlsdk-bot10-amd64" ]; then
+            cp ./releases/hlsdk-bot10-amd64/* ./release-files/ 2>/dev/null || true
           fi
           
-          # List final packages
-          echo "=== Created Release Packages ==="
-          ls -la releases/
+          # List final files
+          echo "Release files:"
+          ls -la ./release-files/
 
-      - name: Create Master Branch Release
-        if: hashFiles('releases/hlsdk-master-*.tar.gz') != ''
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: hlsdk-master-${{ github.run_number }}
-          name: "HLSDK Master Libraries (Build ${{ github.run_number }})"
-          body: |
-            Half-Life SDK libraries built from HLSDK-Portable **master branch**.
-            
-            **Standard Half-Life server and client libraries** - no bot AI included.
-            
-            **Files:**
-            - `hl_amd64.so` + `hl_arm64.so` - Server libraries
-            - `client_amd64.so` + `client_arm64.so` - Client libraries
-            
-            **Usage:** Place in your mod's `dlls/` and `cl_dlls/` directories.
-            
-            Built: $(date)
-            Commit: ${{ github.sha }}
-          files: releases/hlsdk-master-*.tar.gz
+          files: ./release-files/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Bot10 Branch Release  
-        if: hashFiles('releases/hlsdk-bot10-*.tar.gz') != ''
+      - name: Create Manual Release
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: hlsdk-bot10-${{ github.run_number }}
-          name: "HLSDK Bot Libraries (Build ${{ github.run_number }})"
-          body: |
-            Half-Life SDK libraries built from HLSDK-Portable **bot10 branch**.
-            
-            **Server libraries with integrated bot AI** - includes bot support!
-            
-            **Files:**
-            - `hl_amd64.so` + `hl_arm64.so` - Server libraries with bot AI
-            - Alternative names: `bot_amd64.so` + `bot_arm64.so`
-            
-            **Bot Commands:**
-            - `bot_add` - Add a bot
-            - `bot_kick` - Remove bots  
-            - `bot_quota <N>` - Set bot limit
-            
-            **Usage:** Place in your mod's `dlls/` directory, rename to `hl.so`.
-            
-            Built: $(date)
-            Commit: ${{ github.sha }}
-          files: releases/hlsdk-bot10-*.tar.gz
+          tag_name: manual-${{ github.run_number }}
+          name: Manual Release ${{ github.run_number }}
+          files: ./release-files/*
+          draft: false
+          prerelease: true
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # 5) Test the built container
-  test-container:
-    needs: create-manifest
-    runs-on: ubuntu-latest
-    steps:
-      - name: Test container functionality
-        run: |
-          IMAGE=${{ needs.build-images.outputs.image_name }}
-          
-          echo "=== Testing Container ==="
-          docker run --rm ghcr.io/$IMAGE:latest --version || true
-          
-          echo "=== Testing Environment Variables ==="
-          docker run --rm -e HLSDK_MODE=bot10 ghcr.io/$IMAGE:latest echo "Bot mode test" || true

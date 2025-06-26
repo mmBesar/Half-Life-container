@@ -62,20 +62,18 @@ ARG GID=1000
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies (matching your original + what we need for the built version)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcurl4 \
-    ca-certificates \
-    libfreetype6 \
-    libopus0 \
-    libbz2-1.0 \
-    libvorbis0a \
-    libopusfile0 \
-    libogg0 \
-    libstdc++6 \
-    libc6 \
-    && groupadd -g "$GID" hl && useradd -m -u "$UID" -g hl hl \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies - start minimal and add what we need
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends libcurl4 || apt-get install -y --no-install-recommends libcurl4-openssl-dev || true && \
+    apt-get install -y --no-install-recommends libfreetype6 || true && \
+    apt-get install -y --no-install-recommends libopus0 || apt-get install -y --no-install-recommends libopus-dev || true && \
+    apt-get install -y --no-install-recommends libbz2-1.0 || apt-get install -y --no-install-recommends libbz2-dev || true && \
+    apt-get install -y --no-install-recommends libvorbis0a || apt-get install -y --no-install-recommends libvorbis-dev || true && \
+    apt-get install -y --no-install-recommends libopusfile0 || apt-get install -y --no-install-recommends libopusfile-dev || true && \
+    apt-get install -y --no-install-recommends libogg0 || apt-get install -y --no-install-recommends libogg-dev || true && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -g "$GID" hl && useradd -m -u "$UID" -g hl hl
 
 # Copy the built binaries from builder stage (matching your original structure)
 COPY --from=builder /xashds /opt/xashds

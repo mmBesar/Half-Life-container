@@ -55,9 +55,6 @@ RUN mkdir -p /xashds && \
 # Final runtime stage
 FROM ubuntu:24.04
 
-ARG UID=1000
-ARG GID=1000
-
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -68,9 +65,9 @@ RUN apt-get update && \
         libc6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user and group
-RUN groupadd -g "$GID" hl && \
-    useradd -m -u "$UID" -g hl hl
+# Create user and group with fixed IDs
+RUN groupadd -g 1000 hl && \
+    useradd -m -u 1000 -g hl hl
 
 # Copy the built binaries from builder stage
 COPY --from=builder /xashds /opt/xashds

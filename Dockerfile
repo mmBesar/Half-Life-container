@@ -33,17 +33,16 @@ RUN cmake -G Ninja \
  && ninja install
 
 ########################################
-# runtime: minimal Ubuntu + hl user
+# ← runtime: minimal Ubuntu + hl user
 ########################################
-FROM ubuntu:24.04
+FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# expose UID/GID to the layers below
 ARG UID=1000
 ARG GID=1000
 
-# 1) update repos (allow any suite rename), install runtime deps
+# 1) update & install runtime deps
 RUN apt-get \
       -o Acquire::AllowReleaseInfoChange::Suite=true \
       -o Acquire::AllowReleaseInfoChange::Codename=true \
@@ -52,9 +51,9 @@ RUN apt-get \
       libcurl4 ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
 
-# 2) create the hl user
-RUN groupadd -g "$GID" hl \
- && useradd -m -u "$UID" -g hl hl
+# 2) create the hl group & user only if they don't exist
+RUN getent group hl >/dev/null || groupadd -g "$GID" hl \
+ && id -u hl      >/dev/null 2>&1 || useradd -m -u "$UID" -g hl hl
 
 # 3) copy in the compiled server
 COPY --from=builder /opt/xashds /opt/xashds
@@ -66,3 +65,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 USER hl
 ENV XASH3D_BASE=/opt/xashds
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+

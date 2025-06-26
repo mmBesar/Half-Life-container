@@ -68,9 +68,9 @@ RUN apt-get update && \
         libc6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user and group (fix the variable expansion issue)
-RUN groupadd -g ${GID} hl && \
-    useradd -m -u ${UID} -g hl hl
+# Create user and group
+RUN groupadd -g "$GID" hl && \
+    useradd -m -u "$UID" -g hl hl
 
 # Copy the built binaries from builder stage
 COPY --from=builder /xashds /opt/xashds

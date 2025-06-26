@@ -51,9 +51,13 @@ RUN apt-get \
       libcurl4 ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
 
-# 2) create the hl group & user only if they don't exist
-RUN getent group hl >/dev/null || groupadd -g "$GID" hl \
- && id -u hl      >/dev/null 2>&1 || useradd -m -u "$UID" -g hl hl
+# 2) create hl group & user safely
+RUN if ! getent group hl >/dev/null; then \
+      groupadd -g "$GID" hl; \
+    fi && \
+    if ! id -u hl >/dev/null 2>&1; then \
+      useradd -m -u "$UID" -g hl hl; \
+    fi
 
 # 3) copy in the compiled server
 COPY --from=builder /opt/xashds /opt/xashds

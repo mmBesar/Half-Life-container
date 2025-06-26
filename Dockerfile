@@ -1,17 +1,14 @@
 # syntax=docker/dockerfile:1.4
 
 ########################################
-# 1) builder: clone FWGS & compile xashds
+# 1) builder: Debian Bookworm → compile xashds
 ########################################
-FROM ubuntu:24.04 AS builder
+FROM debian:bookworm AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# single-step update+install with release-info flags
-RUN apt-get \
-      -o Acquire::AllowReleaseInfoChange::Suite=true \
-      -o Acquire::AllowReleaseInfoChange::Codename=true \
-      update \
+# Install everything for waf + C++ build (Debian armhf works here)
+RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
       git \
@@ -36,17 +33,14 @@ RUN chmod +x ./waf \
  && ./waf install
 
 ########################################
-# 2) runtime: minimal Ubuntu + hl user
+# 2) runtime: Ubuntu 24.04 + non-root user
 ########################################
 FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# again, update+install in one go with the same flags
-RUN apt-get \
-      -o Acquire::AllowReleaseInfoChange::Suite=true \
-      -o Acquire::AllowReleaseInfoChange::Codename=true \
-      update \
+# install only runtime libs & adduser
+RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libcurl4 \
       ca-certificates \

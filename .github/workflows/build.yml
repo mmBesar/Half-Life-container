@@ -60,7 +60,7 @@ jobs:
         cp hlsdk-master-${{ matrix.arch }}/build/hlsdk-master/build/cl_dll/client.so releases/hlsdk-master/client_${{ matrix.arch }}.so
     
     - name: Upload HLSDK master artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: hlsdk-master-${{ matrix.arch }}
         path: releases/hlsdk-master/

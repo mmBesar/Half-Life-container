@@ -7,7 +7,6 @@ FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# install build tools + waf prerequisites
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -22,24 +21,22 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-# clone & pull submodules
 RUN git clone --depth 1 https://github.com/FWGS/xash3d-fwgs.git . \
  && git submodule update --init --recursive
 
-# configure & build *only* the dedicated server
 RUN chmod +x ./waf \
  && ./waf configure -T release --prefix=/opt/xashds -8 \
  && ./waf build \
  && ./waf install
 
 ########################################
-# 2) runtime: minimal Ubuntu + hl user
+# 2) runtime: Ubuntu + hl user (no tini)
 ########################################
-FROM ubuntu:24.04
+FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# install runtime deps
+# update & install just the runtime deps
 RUN apt-get \
       -o Acquire::AllowReleaseInfoChange::Suite=true \
       -o Acquire::AllowReleaseInfoChange::Codename=true \
@@ -47,7 +44,6 @@ RUN apt-get \
  && apt-get install -y --no-install-recommends \
       libcurl4 \
       ca-certificates \
-      tini \
       adduser \
  && rm -rf /var/lib/apt/lists/*
 
@@ -63,4 +59,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER hl
 ENV XASH3D_BASE=/opt/xashds
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+
+# drop 'tini' here; if you want an init, run with --init
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

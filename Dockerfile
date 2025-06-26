@@ -1,49 +1,54 @@
 # syntax=docker/dockerfile:1.4
 
-###################################
-# → builder: fetch & unpack binary
-###################################
+#####################################
+# ← builder: clone & compile server
+#####################################
 FROM ubuntu:24.04 AS builder
 
-ARG TARGETPLATFORM
+# avoid any interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+# use clang for faster cross-compile under emulation
+ENV CC=clang
+ENV CXX=clang++
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends wget ca-certificates tar gzip \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates git cmake ninja-build clang \
+      pkg-config libcurl4-openssl-dev zlib1g-dev \
  && rm -rf /var/lib/apt/lists/*
 
-RUN set -eux; \
-    case "$TARGETPLATFORM" in \
-      "linux/amd64") ARCH=amd64 ;; \
-      "linux/arm64") ARCH=arm64 ;; \
-      "linux/arm/v7") ARCH=armhf ;; \
-      *) echo "Unsupported platform: $TARGETPLATFORM" >&2; exit 1 ;; \
-    esac; \
-    URL="https://github.com/FWGS/xash3d-fwgs/releases/download/continuous/xashds-linux-${ARCH}.tar.gz"; \
-    wget -O /tmp/xashds.tar.gz "$URL"; \
-    mkdir -p /xashds; \
-    tar -xzf /tmp/xashds.tar.gz -C /xashds; \
-    rm /tmp/xashds.tar.gz; \
-    # upstream tar contains e.g. xashds-linux-amd64/, move its contents up one level:
-    mv /xashds/xashds-linux-*/* /xashds
+WORKDIR /src/xash3d-fwgs
+RUN git clone --depth 1 https://github.com/FWGS/xash3d-fwgs.git . \
+ && git submodule update --init --recursive
 
-###################################
-# → runtime: Ubuntu 24.04 + user
-###################################
-FROM ubuntu:24.04 AS runtime
+WORKDIR /src/xash3d-fwgs/build
+RUN cmake -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DXASH_SDL=OFF \
+      -DXASH_VGUI=OFF \
+      -DXASH_CLIENT=OFF \
+      -DCMAKE_INSTALL_PREFIX=/opt/xashds \
+      .. \
+ && ninja install
 
-# silence any dpkg prompts (tzdata, etc.)
+#####################################
+# ← runtime: minimal Ubuntu + user
+#####################################
+FROM ubuntu:24.04
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 ARG UID=1000
 ARG GID=1000
 
-RUN apt-get -o Acquire::AllowReleaseInfoChange::Suite=true update \
- && apt-get install -y --no-install-recommends libcurl4 ca-certificates \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libcurl4 ca-certificates tini \
  && groupadd -g "$GID" hl \
  && useradd -m -u "$UID" -g hl hl \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /xashds /opt/xashds
+COPY --from=builder /opt/xashds /opt/xashds
 
 WORKDIR /data
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -51,4 +56,5 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER hl
 ENV XASH3D_BASE=/opt/xashds
-ENTRYPOINT ["entrypoint.sh"]
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

@@ -1,8 +1,5 @@
-# Multi-stage build for Xash3D-FWGS Dedicated Server
-# Stage 1: Build environment
-FROM ubuntu:24.04 as builder
+FROM ubuntu:24.04 AS builder
 
-# Set build arguments for architecture support
 ARG TARGETARCH
 ARG TARGETPLATFORM
 
@@ -25,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     libopusfile-dev \
     libogg-dev \
     pkg-config \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -32,10 +30,6 @@ WORKDIR /build
 
 # Clone the repository with all submodules
 RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git .
-
-# Configure environment for cross-compilation if needed
-ENV CC=gcc
-ENV CXX=g++
 
 # Configure the build for dedicated server only
 # The --dedicated flag tells WAF to build without SDL2 dependencies (server only)
@@ -49,17 +43,29 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 # Build the project
 RUN ./waf build
 
-# Install to a clean directory
-RUN ./waf install --destdir=/install
+# Install to a clean directory structure similar to official releases
+RUN ./waf install --destdir=/tmp/install && \
+    mkdir -p /xashds && \
+    # Find the main executable and copy it as 'xash' to match your entrypoint
+    find /tmp/install -name "xash3d" -type f -exec cp {} /xashds/xash \; && \
+    # Copy any shared libraries
+    find /tmp/install -name "*.so" -type f -exec cp {} /xashds/ \; && \
+    # Make sure the main executable is executable
+    chmod +x /xashds/xash
 
-# Stage 2: Runtime environment
+# Final runtime stage
 FROM ubuntu:24.04
+
+ARG UID=1000
+ARG GID=1000
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies (minimal for server)
-RUN apt-get update && apt-get install -y \
+# Install runtime dependencies (matching your original + what we need for the built version)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcurl4 \
+    ca-certificates \
     libfreetype6 \
     libopus0 \
     libbz2-1.0 \
@@ -68,37 +74,22 @@ RUN apt-get update && apt-get install -y \
     libogg0 \
     libstdc++6 \
     libc6 \
+    && groupadd -g "$GID" hl && useradd -m -u "$UID" -g hl hl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN groupadd -r xash3d && useradd -r -g xash3d -d /home/xash3d -s /bin/bash xash3d \
-    && mkdir -p /home/xash3d /data \
-    && chown -R xash3d:xash3d /home/xash3d /data
+# Copy the built binaries from builder stage (matching your original structure)
+COPY --from=builder /xashds /opt/xashds
 
-# Copy the built binaries from builder stage
-COPY --from=builder /install/ /opt/xash3d/
-COPY --from=builder /build/build/ /opt/xash3d/build/
-
-# Set proper permissions
-RUN chmod +x /opt/xash3d/xash3d && \
-    chown -R xash3d:xash3d /opt/xash3d
-
-# Create symlinks for easier access
-RUN ln -s /opt/xash3d/xash3d /usr/local/bin/xash3d
+# Set working directory and copy entrypoint
+WORKDIR /data
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Switch to non-root user
-USER xash3d
+USER hl
 
-# Set working directory
-WORKDIR /data
+# Environment variables (matching your original)
+ENV XASH3D_BASE=/opt/xashds
 
-# Expose default ports (you can override these)
-EXPOSE 27015/udp 27015/tcp
-
-# Environment variables for server configuration
-ENV XASH3D_BASEDIR=/data
-ENV XASH3D_RODIR=/opt/xash3d
-
-# Default command to run the dedicated server
-# Users should mount their game data to /data
-CMD ["xash3d", "-dedicated", "+map", "crossfire", "+maxplayers", "16"]
+# Use your existing entrypoint
+ENTRYPOINT ["entrypoint.sh"]

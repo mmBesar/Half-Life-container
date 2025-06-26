@@ -30,12 +30,11 @@ RUN cmake -G Ninja \
  && ninja install
 
 ########################################
-# runtime: minimal Ubuntu + hl user
+# ← runtime: minimal Ubuntu + hl user
 ########################################
 FROM ubuntu:24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
-ARG UID=1000
 
 # 1) update & install runtime deps
 RUN apt-get \
@@ -43,11 +42,11 @@ RUN apt-get \
       -o Acquire::AllowReleaseInfoChange::Codename=true \
       update \
  && apt-get install -y --no-install-recommends \
-      libcurl4 ca-certificates tini \
+      libcurl4 ca-certificates tini adduser \
  && rm -rf /var/lib/apt/lists/*
 
-# 2) create hl user with its own group (-U)
-RUN useradd -m -u "$UID" -U hl
+# 2) create an unprivileged 'hl' user (and group) with default UID/GID
+RUN adduser --disabled-password --gecos '' hl
 
 # 3) copy in the compiled server
 COPY --from=builder /opt/xashds /opt/xashds

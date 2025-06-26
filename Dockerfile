@@ -1,4 +1,4 @@
-FROM ubuntu:24.04 AS builder
+FROM debian:trixie-slim AS builder
 
 ARG BASE_ARCH=amd64
 

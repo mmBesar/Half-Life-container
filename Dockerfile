@@ -38,18 +38,20 @@ RUN case "$TARGETARCH" in \
 # Build the project
 RUN ./waf build
 
-# Install to a temporary directory
-RUN ./waf install --destdir=/tmp/install
-
-# Prepare final directory structure
-RUN mkdir -p /xashds && \
-    # Find and copy the main executable
-    find /tmp/install -name "xash3d" -type f -executable -exec cp {} /xashds/xash3d \; && \
-    # Copy any shared libraries that might be needed
-    find /tmp/install -name "*.so" -type f -exec cp {} /xashds/ \; 2>/dev/null || true && \
-    # Make sure the executable is properly executable
-    chmod +x /xashds/xash3d && \
-    # List what we have for debugging
+# Install to a temporary directory and prepare final structure  
+RUN ./waf install --destdir=/tmp/install && \
+    mkdir -p /xashds && \
+    echo "=== Contents of /tmp/install ===" && \
+    find /tmp/install -type f -executable && \
+    echo "=== All files in /tmp/install ===" && \
+    find /tmp/install -type f && \
+    # Copy the main executable - it should be named 'xash3d' in the install directory
+    find /tmp/install -name "*xash*" -type f -executable | head -1 | xargs -I {} cp {} /xashds/xash && \
+    # Copy engine library if it exists
+    find /tmp/install -name "*.so" -type f | xargs -I {} cp {} /xashds/ 2>/dev/null || true && \
+    # Ensure executable permissions
+    chmod +x /xashds/xash && \
+    echo "=== Final /xashds contents ===" && \
     ls -la /xashds/
 
 # Final runtime stage

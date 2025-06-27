@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3 \
     python3-pip \
+    python3-venv \
     git \
     pkg-config \
     libsdl2-dev \
@@ -14,10 +15,16 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     gcc-multilib \
     g++-multilib \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Waf
-RUN python3 -m pip install --break-system-packages waf
+# Install Waf - try multiple methods for compatibility
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install waf && \
+    ln -s /opt/venv/bin/waf /usr/local/bin/waf || \
+    (wget https://waf.io/waf-2.0.25 -O /usr/local/bin/waf && chmod +x /usr/local/bin/waf)
+
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /build
 

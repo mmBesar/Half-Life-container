@@ -10,17 +10,16 @@ RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git .
 RUN ./waf configure --build-type=release --dedicated
 RUN ./waf build
 
-# Stage 2: HLSDK Master — WAF
+# Stage 2: HLSDK Master - Waf
 FROM debian:bookworm-slim AS hlsdk-master-builder
-RUN apt-get update && apt-get install -y \
-  build-essential python3 git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y build-essential python3 git && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 RUN git clone https://github.com/FWGS/hlsdk-portable.git hlsdk-master
 WORKDIR /build/hlsdk-master
 RUN ./waf configure --build-type=release
 RUN ./waf build
 
-# Stage 3: HLSDK Bot10 — Clang + Ninja + CMake
+# Stage 3: HLSDK Bot10 - CMake + Clang + Ninja
 FROM debian:bookworm-slim AS hlsdk-bot10-builder
 RUN apt-get update && apt-get install -y \
   build-essential clang ninja-build cmake git \
@@ -44,7 +43,6 @@ RUN mkdir -p bin valve/dlls valve/cl_dlls hlsdk
 
 COPY --from=xash3d-builder /build/xash3d-fwgs/build/engine/xash3d ./bin/
 COPY --from=xash3d-builder /build/xash3d-fwgs/build/game_launch/xash3d.sh ./bin/
-
 COPY --from=hlsdk-master-builder /build/hlsdk-master/build/dlls/hl.so ./hlsdk/hl_amd64.so
 COPY --from=hlsdk-master-builder /build/hlsdk-master/build/cl_dll/client.so ./hlsdk/client_amd64.so
 COPY --from=hlsdk-bot10-builder /build/hlsdk-bot10/build/dlls/hl.so ./hlsdk/bot_amd64.so
@@ -77,10 +75,12 @@ cd /opt/xash3d
 : "${HLSERVER_BOTS:=false}"
 : "${HLSERVER_GAME:=valve}"
 : "${HLSDK_BRANCH:=master}"
+: "${XASH_EXTRA_ARGS:=}"
 ARGS="-dedicated -ip $HLSERVER_IP -port $HLSERVER_PORT +map $HLSERVER_MAP +maxplayers $HLSERVER_MAXPLAYERS -game $HLSERVER_GAME"
 if [[ "$HLSDK_BRANCH" == "bot10" && "$HLSERVER_BOTS" == "true" ]]; then
   ARGS+=" +exec bot.cfg"
 fi
+ARGS+=" $XASH_EXTRA_ARGS"
 exec ./bin/xash3d $ARGS
 EOF
 RUN chmod +x ./bin/start-server.sh
@@ -94,6 +94,7 @@ ENV HLSERVER_PORT=27015 \
     HLSERVER_MAXPLAYERS=16 \
     HLSERVER_BOTS=false \
     HLSERVER_GAME=valve \
-    HLSDK_BRANCH=master
+    HLSDK_BRANCH=master \
+    XASH_EXTRA_ARGS=""
 
 CMD ["bin/start-server.sh"]

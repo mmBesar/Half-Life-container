@@ -37,8 +37,8 @@ jobs:
           cache-to: type=local,dest=/tmp/.bldx-hlsdk-master-${{ matrix.arch }}-new,mode=max
       - run: |
           mkdir -p releases/hlsdk-master
-          cp artifacts/hlsdk-master-${{ matrix.arch }}/build/hlsdk-master/build/dlls/hl.so releases/hlsdk-master/hl_${{ matrix.arch }}.so
-          cp artifacts/hlsdk-master-${{ matrix.arch }}/build/hlsdk-master/build/cl_dll/client.so releases/hlsdk-master/client_${{ matrix.arch }}.so
+          cp artifacts/hlsdk-master-${{ matrix.arch }}/build/dlls/hl.so releases/hlsdk-master/hl_${{ matrix.arch }}.so
+          cp artifacts/hlsdk-master-${{ matrix.arch }}/build/cl_dll/client.so releases/hlsdk-master/client_${{ matrix.arch }}.so
       - uses: actions/upload-artifact@v4
         with:
           name: hlsdk-master-${{ matrix.arch }}
@@ -67,7 +67,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}-new,mode=max
       - run: |
           mkdir -p releases/hlsdk-bot10
-          cp artifacts/hlsdk-bot10-${{ matrix.arch }}/build/hlsdk-bot10/build/dlls/hl.so releases/hlsdk-bot10/bot_${{ matrix.arch }}.so
+          cp artifacts/hlsdk-bot10-${{ matrix.arch }}/build/dlls/hl.so releases/hlsdk-bot10/bot_${{ matrix.arch }}.so
       - uses: actions/upload-artifact@v4
         with:
           name: hlsdk-bot10-${{ matrix.arch }}

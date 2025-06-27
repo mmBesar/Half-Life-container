@@ -1,170 +1,168 @@
-name: "Build Xash3D Server & HLSDK"
+name: Build Xash3D Server
 
 on:
   push:
-    branches: [main, master]
-    tags: ['v*']
+    branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
-    branches: [main, master]
-  schedule:
-    - cron: '0 0 * * 0'
+    branches: [ main, master ]
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/xash3d-server
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  hlsdk-master:
+  build-libraries:
+    name: Build HLSDK Libraries
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        branch: [master, bot10]
+        # Uncomment the line below when ready to add ARM64 support
+        # arch: [amd64, arm64]
         arch: [amd64]
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Cache
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.bldx-hlsdk-master-${{ matrix.arch }}
-          key: ${{ runner.os }}-hlsdk-master-${{ matrix.arch }}-${{ github.sha }}
-      - name: Build HLSDK master
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          target: hlsdk-master-builder
-          outputs: type=local,dest=./artifacts/hlsdk-master-${{ matrix.arch }}
-          cache-from: type=local,src=/tmp/.bldx-hlsdk-master-${{ matrix.arch }}
-          cache-to: type=local,dest=/tmp/.bldx-hlsdk-master-${{ matrix.arch }}-new,mode=max
-      - run: |
-          mkdir -p releases/hlsdk-master
-          strip -o releases/hlsdk-master/hl_${{ matrix.arch }}.so artifacts/hlsdk-master-${{ matrix.arch }}/build/dlls/hl.so
-          strip -o releases/hlsdk-master/client_${{ matrix.arch }}.so artifacts/hlsdk-master-${{ matrix.arch }}/build/cl_dll/client.so
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hlsdk-master-${{ matrix.arch }}
-          path: releases/hlsdk-master/
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-  hlsdk-bot10:
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build HLSDK ${{ matrix.branch }} for ${{ matrix.arch }}
+      run: |
+        # Create temporary Dockerfile for library building
+        cat > Dockerfile.libs << 'EOF'
+        FROM debian:bookworm-slim
+        
+        RUN apt-get update && apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            pkg-config \
+            && rm -rf /var/lib/apt/lists/*
+        
+        WORKDIR /build
+        
+        ARG BRANCH=master
+        RUN git clone --depth 1 -b ${BRANCH} https://github.com/FWGS/hlsdk-portable.git hlsdk
+        
+        WORKDIR /build/hlsdk
+        
+        RUN mkdir build && cd build \
+            && cmake .. -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
+            && make -j$(nproc)
+        
+        # Create output directory structure
+        RUN mkdir -p /output
+        
+        # Copy built libraries with appropriate naming
+        RUN if [ "${BRANCH}" = "bot10" ]; then \
+                cp build/dlls/hl.so /output/bot_$(uname -m | sed 's/x86_64/amd64/').so; \
+            else \
+                cp build/dlls/hl.so /output/hl_$(uname -m | sed 's/x86_64/amd64/').so; \
+                cp build/cl_dll/client.so /output/client_$(uname -m | sed 's/x86_64/amd64/').so; \
+            fi
+        EOF
+        
+        # Build for specified architecture
+        docker buildx build \
+          --platform linux/${{ matrix.arch }} \
+          --build-arg BRANCH=${{ matrix.branch }} \
+          --output type=local,dest=./output \
+          -f Dockerfile.libs .
+
+    - name: Upload libraries as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: hlsdk-${{ matrix.branch }}-${{ matrix.arch }}
+        path: output/
+        retention-days: 30
+
+  build-container:
+    name: Build Container Image
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [amd64]
+    needs: build-libraries
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Cache
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}
-          key: ${{ runner.os }}-hlsdk-bot10-${{ matrix.arch }}-${{ github.sha }}
-      - name: Build HLSDK bot10
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          target: hlsdk-bot10-builder
-          outputs: type=local,dest=./artifacts/hlsdk-bot10-${{ matrix.arch }}
-          cache-from: type=local,src=/tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}
-          cache-to: type=local,dest=/tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}-new,mode=max
-      - run: |
-          mkdir -p releases/hlsdk-bot10
-          strip -o releases/hlsdk-bot10/bot_${{ matrix.arch }}.so artifacts/hlsdk-bot10-${{ matrix.arch }}/build/dlls/hl.so
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hlsdk-bot10-${{ matrix.arch }}
-          path: releases/hlsdk-bot10/
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-  docker:
-    runs-on: ubuntu-latest
-    needs: [hlsdk-master, hlsdk-bot10]
-    strategy:
-      matrix:
-        arch: [amd64]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - uses: actions/cache@v3
-        with:
-          path: /tmp/.bldx-${{ matrix.arch }}
-          key: ${{ runner.os }}-bldx-${{ matrix.arch }}-${{ github.sha }}
-      - uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/${{ matrix.arch }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}-${{ matrix.arch }}
-          cache-from: type=local,src=/tmp/.bldx-${{ matrix.arch }}
-          cache-to: type=local,dest=/tmp/.bldx-${{ matrix.arch }}-new,mode=max
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
 
-  manifest:
-    runs-on: ubuntu-latest
-    needs: [docker]
-    if: github.event_name != 'pull_request'
-    steps:
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
-      - run: |
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            docker manifest create $tag $tag-amd64
-            docker manifest push $tag
-          done
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-  release:
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64
+        # Uncomment the line below when ready to add ARM64 support
+        # platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  create-release:
+    name: Create Release
     runs-on: ubuntu-latest
-    needs: [hlsdk-master, hlsdk-bot10]
+    needs: build-libraries
     if: startsWith(github.ref, 'refs/tags/v')
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: hlsdk-master-amd64
-          path: releases/hlsdk-master/
-      - uses: actions/download-artifact@v4
-        with:
-          name: hlsdk-bot10-amd64
-          path: releases/hlsdk-bot10/
-      - name: Archive artifacts
-        run: |
-          cd releases/hlsdk-master && tar -czf ../hlsdk-master-${{ github.ref_name }}.tar.gz *
-          cd ../hlsdk-bot10 && tar -czf ../hlsdk-bot10-${{ github.ref_name }}.tar.gz *
-      - uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            releases/hlsdk-master-${{ github.ref_name }}.tar.gz
-            releases/hlsdk-bot10-${{ github.ref_name }}.tar.gz
-          body: |
-            ## Xash3D Server ${{ github.ref_name }}
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-            Includes multi-arch Docker image & HLSDK .so's.
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
 
-            ### HLSDK Master:
-            - hl_amd64.so
-            - client_amd64.so
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+        
+        # Copy and rename files for release
+        find artifacts/ -name "*.so" -exec cp {} release-assets/ \;
+        
+        # List files for verification
+        echo "Release assets:"
+        ls -la release-assets/
 
-            ### HLSDK Bot10:
-            - bot_amd64.so
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-assets/*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

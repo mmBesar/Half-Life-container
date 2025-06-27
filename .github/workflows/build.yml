@@ -1,168 +1,201 @@
-# Multi-stage Dockerfile for Xash3D-FWGS server with HLSDK support
-FROM debian:bookworm-slim AS base-builder
+# Give the GITHUB_TOKEN permission to push packages
+permissions:
+  contents: read
+  packages: write
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    python3 \
-    python3-pip \
-    git \
-    pkg-config \
-    libsdl2-dev \
-    libfontconfig-dev \
-    libfreetype6-dev \
-    gcc-multilib \
-    g++-multilib \
-    && rm -rf /var/lib/apt/lists/*
+name: Build, Push & Manifest Multi-Arch Image
 
-# Install Waf
-RUN python3 -m pip install --break-system-packages waf
+on:
+  push:
+    paths:
+      - '.github/workflows/image-build.yml'
+      - 'Dockerfile'
+  pull_request:
+    paths:
+      - '.github/workflows/image-build.yml'
+      - 'Dockerfile'
+  workflow_dispatch:
 
-WORKDIR /build
+jobs:
+  # Build HLSDK libraries for release
+  build-libraries:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        branch: [master, bot10]
+        arch: [amd64, arm64]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-# Stage 1: Build Xash3D-FWGS engine
-FROM base-builder AS xash3d-builder
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
 
-# Clone Xash3D-FWGS with submodules
-RUN git clone --recursive --depth 1 https://github.com/FWGS/xash3d-fwgs.git
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
 
-WORKDIR /build/xash3d-fwgs
+    - name: Build HLSDK ${{ matrix.branch }} for ${{ matrix.arch }}
+      run: |
+        # Create temporary Dockerfile for library building
+        cat > Dockerfile.libs << 'EOF'
+        FROM debian:bookworm-slim
+        
+        RUN apt-get update && apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            pkg-config \
+            gcc-multilib \
+            g++-multilib \
+            && rm -rf /var/lib/apt/lists/*
+        
+        WORKDIR /build
+        
+        ARG BRANCH=master
+        RUN git clone --recursive --depth 1 -b ${BRANCH} https://github.com/FWGS/hlsdk-portable.git hlsdk
+        
+        WORKDIR /build/hlsdk
+        
+        RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
+            && cmake --build build -j$(nproc)
+        
+        # Create output directory structure
+        RUN mkdir -p /output
+        
+        # Copy built libraries with appropriate naming
+        RUN ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') && \
+            if [ "${BRANCH}" = "bot10" ]; then \
+                cp build/dlls/hl.so /output/bot_${ARCH}.so; \
+            else \
+                cp build/dlls/hl.so /output/hl_${ARCH}.so; \
+                if [ -f build/cl_dll/client.so ]; then \
+                    cp build/cl_dll/client.so /output/client_${ARCH}.so; \
+                fi; \
+            fi
+        EOF
+        
+        # Build for specified architecture
+        docker buildx build \
+          --platform linux/${{ matrix.arch }} \
+          --build-arg BRANCH=${{ matrix.branch }} \
+          --output type=local,dest=./output \
+          -f Dockerfile.libs .
 
-# Configure and build Xash3D (dedicated server only)
-RUN python3 waf configure -T release --dedicated --64bits \
-    && python3 waf build
+    - name: Upload libraries as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: hlsdk-${{ matrix.branch }}-${{ matrix.arch }}
+        path: output/
+        retention-days: 30
 
-# Stage 2: Build HLSDK master branch
-FROM base-builder AS hlsdk-master-builder
+  # 1) Build & push per-arch container images
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64]
+        # Uncomment the line below when ready to add ARM64 support  
+        # arch: [amd64, arm64]
 
-# Clone HLSDK master branch
-RUN git clone --recursive --depth 1 https://github.com/FWGS/hlsdk-portable.git hlsdk-master
+    outputs:
+      image_name: ${{ steps.lowercase.outputs.image_name }}
 
-WORKDIR /build/hlsdk-master
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-# Build HLSDK master with CMake
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
-    && cmake --build build -j$(nproc)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-# Stage 3: Build HLSDK bot10 branch
-FROM base-builder AS hlsdk-bot10-builder
+      - name: Register QEMU for emulation
+        uses: docker/setup-qemu-action@v3
 
-# Clone HLSDK bot10 branch
-RUN git clone --recursive --depth 1 -b bot10 https://github.com/FWGS/hlsdk-portable.git hlsdk-bot10
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-WORKDIR /build/hlsdk-bot10
+      - name: Compute lowercase image name
+        id: lowercase
+        run: |
+          IMAGE=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')
+          echo "image_name=$IMAGE" >> $GITHUB_OUTPUT
 
-# Build HLSDK bot10 with CMake
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
-    && cmake --build build -j$(nproc)
+      - name: Build & push ${{ matrix.arch }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.lowercase.outputs.image_name }}:latest-${{ matrix.arch }}
+            ghcr.io/${{ steps.lowercase.outputs.image_name }}:${{ github.sha }}-${{ matrix.arch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-# Final runtime stage
-FROM debian:bookworm-slim AS runtime
+  # 2) Assemble the multi-arch manifest
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    libsdl2-2.0-0 \
-    libfontconfig1 \
-    libfreetype6 \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -s /bin/false -d /opt/xash3d xash3d
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-# Create directories
-RUN mkdir -p /opt/xash3d/{bin,data/dlls,valve} \
-    && chown -R xash3d:xash3d /opt/xash3d
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-# Copy Xash3D engine
-COPY --from=xash3d-builder /build/xash3d-fwgs/build/engine/xash3d /opt/xash3d/bin/
+      - name: Create multi-arch manifest
+        run: |
+          IMAGE=${{ needs.build.outputs.image_name }}
+          docker buildx imagetools create \
+            --tag ghcr.io/$IMAGE:latest \
+            ghcr.io/$IMAGE:latest-amd64
+            # Uncomment the line below when ARM64 is ready
+            # ghcr.io/$IMAGE:latest-arm64
 
-# Copy HLSDK master files
-COPY --from=hlsdk-master-builder /build/hlsdk-master/build/dlls/hl.so /opt/xash3d/data/dlls/hl_$(uname -m | sed 's/x86_64/amd64/').so
-COPY --from=hlsdk-master-builder /build/hlsdk-master/build/cl_dll/client.so /opt/xash3d/data/dlls/client_$(uname -m | sed 's/x86_64/amd64/').so
+  # 3) Create release with library files
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build-libraries
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-# Copy HLSDK bot10 files  
-COPY --from=hlsdk-bot10-builder /build/hlsdk-bot10/build/dlls/hl.so /opt/xash3d/data/dlls/bot_$(uname -m | sed 's/x86_64/amd64/').so
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
 
-# Create entrypoint script
-RUN cat > /opt/xash3d/entrypoint.sh << 'EOF'
-#!/bin/bash
-set -e
+    - name: Prepare release assets
+      run: |
+        mkdir -p release-assets
+        
+        # Copy and organize files for release
+        find artifacts/ -name "*.so" -exec cp {} release-assets/ \;
+        
+        # List files for verification
+        echo "Release assets:"
+        ls -la release-assets/
 
-# Default values
-: "${HLSERVER_PORT:=27015}"
-: "${HLSERVER_IP:=0.0.0.0}"
-: "${HLSERVER_MAP:=stalkyard}"
-: "${HLSERVER_MAXPLAYERS:=16}"
-: "${HLSERVER_GAME:=valve}"
-: "${HLSERVER_HOSTNAME:=Xash3D Server}"
-: "${HLSERVER_PASSWORD:=}"
-: "${HLSERVER_RCON_PASSWORD:=}"
-: "${HLSERVER_DLL:=hl}"
-: "${HLSERVER_EXTRA_ARGS:=}"
-
-echo "Starting Xash3D server..."
-echo "Port: $HLSERVER_PORT"
-echo "IP: $HLSERVER_IP"
-echo "Map: $HLSERVER_MAP"
-echo "Max Players: $HLSERVER_MAXPLAYERS"
-echo "Game: $HLSERVER_GAME"
-echo "Hostname: $HLSERVER_HOSTNAME"
-echo "DLL: $HLSERVER_DLL"
-
-# Detect architecture
-ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
-
-# Build server arguments
-ARGS=(
-    "-dedicated"
-    "-port" "$HLSERVER_PORT"
-    "-ip" "$HLSERVER_IP"
-    "-game" "$HLSERVER_GAME"
-    "-dll" "/opt/xash3d/data/dlls/${HLSERVER_DLL}_${ARCH}.so"
-    "+hostname" "$HLSERVER_HOSTNAME"
-    "+maxplayers" "$HLSERVER_MAXPLAYERS"
-    "+map" "$HLSERVER_MAP"
-)
-
-# Add optional parameters
-if [ -n "$HLSERVER_PASSWORD" ]; then
-    ARGS+=("+sv_password" "$HLSERVER_PASSWORD")
-fi
-
-if [ -n "$HLSERVER_RCON_PASSWORD" ]; then
-    ARGS+=("+rcon_password" "$HLSERVER_RCON_PASSWORD")
-fi
-
-# Add extra args if provided
-if [ -n "$HLSERVER_EXTRA_ARGS" ]; then
-    eval "ARGS+=($HLSERVER_EXTRA_ARGS)"
-fi
-
-echo "Starting with args: ${ARGS[*]}"
-
-# Start the server
-exec /opt/xash3d/bin/xash3d "${ARGS[@]}"
-EOF
-
-RUN chmod +x /opt/xash3d/entrypoint.sh \
-    && chown xash3d:xash3d /opt/xash3d/entrypoint.sh
-
-# Switch to non-root user
-USER xash3d
-WORKDIR /opt/xash3d
-
-# Expose default port
-EXPOSE 27015/udp
-
-# Environment variables with defaults
-ENV HLSERVER_PORT=27015 \
-    HLSERVER_IP=0.0.0.0 \
-    HLSERVER_MAP=stalkyard \
-    HLSERVER_MAXPLAYERS=16 \
-    HLSERVER_GAME=valve \
-    HLSERVER_HOSTNAME="Xash3D Server" \
-    HLSERVER_PASSWORD="" \
-    HLSERVER_RCON_PASSWORD="" \
-    HLSERVER_DLL=hl \
-    HLSERVER_EXTRA_ARGS=""
-
-ENTRYPOINT ["/opt/xash3d/entrypoint.sh"]
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release-assets/*
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

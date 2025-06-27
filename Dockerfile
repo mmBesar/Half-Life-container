@@ -1,128 +1,139 @@
 FROM debian:bookworm-slim AS builder
 
-# Install build dependencies
+ARG TARGETARCH
+ARG TARGETPLATFORM
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies for both Xash3D and HLSDK
 RUN apt-get update && apt-get install -y \
     git \
     build-essential \
-    cmake \
     python3 \
     python3-pip \
-    python3-setuptools \
-    python3-wheel \
-    pkg-config \
-    libsdl2-dev \
-    libfontconfig-dev \
-    libfreetype6-dev \
+    gcc \
+    g++ \
     libc6-dev \
+    pkg-config \
+    ca-certificates \
+    cmake \
+    file \
+    && if [ "$TARGETARCH" = "arm64" ]; then \
+        apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
-# Create build directory
-WORKDIR /build
+# Set working directory for Xash3D
+WORKDIR /build-xash
 
-# Clone Xash3D-FWGS engine
-RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git
+# Clone and build Xash3D FWGS
+RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git . && \
+    case "$TARGETARCH" in \
+        amd64) ./waf configure --dedicated -T release -8 ;; \
+        arm64) ./waf configure --dedicated -T release ;; \
+        *) ./waf configure --dedicated -T release ;; \
+    esac && \
+    ./waf build && \
+    ./waf install --destdir=/tmp/xash-install
 
-# Clone HLSDK-portable master branch
-RUN git clone https://github.com/FWGS/hlsdk-portable.git hlsdk-master
+# Prepare Xash3D binaries
+RUN mkdir -p /artifacts/xash && \
+    find /tmp/xash-install -name "*xash*" -type f -executable | head -1 | xargs -I {} cp {} /artifacts/xash/xash && \
+    find /tmp/xash-install -name "*.so" -type f | xargs -I {} cp {} /artifacts/xash/ 2>/dev/null || true && \
+    chmod +x /artifacts/xash/xash
 
-# Clone HLSDK-portable bot10 branch
-RUN git clone -b bot10 https://github.com/FWGS/hlsdk-portable.git hlsdk-bot10
+# Build HLSDK Master Branch (standard Half-Life)
+WORKDIR /build-hlsdk-master
+RUN git clone --depth 1 --branch master https://github.com/FWGS/hlsdk-portable.git . && \
+    mkdir build && cd build && \
+    case "$TARGETARCH" in \
+        amd64) \
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON -D64BIT=ON -Wno-dev && \
+            make -j$(nproc) && \
+            ls -la dlls/ cl_dll/ && \
+            cp dlls/hl_amd64.so /artifacts/hl_master_amd64.so && \
+            cp cl_dll/client_amd64.so /artifacts/client_master_amd64.so ;; \
+        arm64) \
+            cmake .. \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DGOLDSOURCE_SUPPORT=ON \
+                -D64BIT=ON \
+                -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+                -Wno-dev && \
+            make -j$(nproc) && \
+            ls -la dlls/ cl_dll/ && \
+            cp dlls/hl_arm64.so /artifacts/hl_master_arm64.so && \
+            cp cl_dll/client_arm64.so /artifacts/client_master_arm64.so ;; \
+    esac
 
-# Build Xash3D-FWGS engine (server only)
-WORKDIR /build/xash3d-fwgs
-RUN python3 waf configure -T release --dedicated --enable-lto --enable-bundled-deps
-RUN python3 waf build
+# Build HLSDK Bot10 Branch (with bot AI)
+WORKDIR /build-hlsdk-bot10
+RUN git clone --depth 1 --branch bot10 https://github.com/FWGS/hlsdk-portable.git . && \
+    mkdir build && cd build && \
+    case "$TARGETARCH" in \
+        amd64) \
+            cmake .. -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON -D64BIT=ON -Wno-dev && \
+            make -j$(nproc) && \
+            ls -la dlls/ && \
+            cp dlls/bot_amd64.so /artifacts/hl_bot_amd64.so ;; \
+        arm64) \
+            cmake .. \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DGOLDSOURCE_SUPPORT=ON \
+                -D64BIT=ON \
+                -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+                -Wno-dev && \
+            make -j$(nproc) && \
+            ls -la dlls/ && \
+            cp dlls/bot_*.so /artifacts/hl_bot_arm64.so ;; \
+    esac
 
-# Build HLSDK master branch (regular Half-Life)
-WORKDIR /build/hlsdk-master
-RUN mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make -j$(nproc)
+# Copy all HLSDK libraries to the Xash directory for the container
+RUN mkdir -p /artifacts/xash/hlsdk && \
+    cp /artifacts/hl_master_*.so /artifacts/xash/hlsdk/ 2>/dev/null || true && \
+    cp /artifacts/client_master_*.so /artifacts/xash/hlsdk/ 2>/dev/null || true && \
+    cp /artifacts/hl_bot_*.so /artifacts/xash/hlsdk/ 2>/dev/null || true
 
-# Build HLSDK bot10 branch (with bots)
-WORKDIR /build/hlsdk-bot10
-RUN mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make -j$(nproc)
+# Show what we built
+RUN echo "=== Built Artifacts ===" && \
+    find /artifacts -type f -exec ls -la {} \; && \
+    echo "=== File Types ===" && \
+    find /artifacts -type f -exec file {} \;
 
-# Runtime stage
+# Final runtime stage
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    libsdl2-2.0-0 \
-    libfontconfig1 \
-    libfreetype6 \
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install minimal runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libcurl4 \
+        libc6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create directories
-RUN mkdir -p /opt/xash3d/valve/dlls /opt/xash3d/data/dll
+# Copy all built binaries and libraries
+COPY --from=builder /artifacts/xash /opt/xash
+COPY --from=builder /artifacts/*.so /opt/hlsdk-libs/
 
-# Copy Xash3D engine binaries
-COPY --from=builder /build/xash3d-fwgs/build/engine/xash3d /opt/xash3d/
+# Set working directory and copy entrypoint
+WORKDIR /data
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Copy HLSDK libraries
-# Master branch libraries
-COPY --from=builder /build/hlsdk-master/build/dlls/hl.so /opt/xash3d/data/dll/hl.so
-COPY --from=builder /build/hlsdk-master/build/cl_dll/client.so /opt/xash3d/data/dll/client.so
+# Environment variables for runtime control
+ENV XASH3D_BASE=/opt/xash
+ENV HLSDK_MODE=master
+ENV HLSDK_LIBS_PATH=/opt/hlsdk-libs
 
-# Bot10 branch library
-COPY --from=builder /build/hlsdk-bot10/build/dlls/hl.so /opt/xash3d/data/dll/bot.so
-
-# Create valve directory and link default libraries
-RUN ln -sf /opt/xash3d/data/dll/hl.so /opt/xash3d/valve/dlls/hl.so && \
-    ln -sf /opt/xash3d/data/dll/client.so /opt/xash3d/valve/dlls/client.so
-
-# Environment variables with defaults
-ENV HLSERVER_PORT=27015
-ENV HLSERVER_IP=0.0.0.0
-ENV HLSERVER_MAP=stalkyard
-ENV HLSERVER_MAXPLAYERS=16
-ENV HLSERVER_BOTS=false
-ENV HLSERVER_GAME=valve
-ENV HLSERVER_DLL=hl
-
-# Create startup script
-RUN cat > /opt/xash3d/start-server.sh << 'EOF'
-#!/bin/bash
-
-# Set up game directory
-GAME_DIR="/opt/xash3d/${HLSERVER_GAME}"
-mkdir -p "${GAME_DIR}/dlls"
-
-# Link appropriate DLL based on HLSERVER_BOTS or HLSERVER_DLL
-if [ "${HLSERVER_BOTS}" = "true" ] || [ "${HLSERVER_DLL}" = "bot" ]; then
-    echo "Starting server with bot support..."
-    ln -sf /opt/xash3d/data/dll/bot.so "${GAME_DIR}/dlls/hl.so"
-else
-    echo "Starting server without bots..."
-    ln -sf /opt/xash3d/data/dll/hl.so "${GAME_DIR}/dlls/hl.so"
-fi
-
-# Always link client library
-ln -sf /opt/xash3d/data/dll/client.so "${GAME_DIR}/dlls/client.so"
-
-# Build command line arguments
-ARGS="-dedicated"
-ARGS="${ARGS} -port ${HLSERVER_PORT}"
-ARGS="${ARGS} -ip ${HLSERVER_IP}"
-ARGS="${ARGS} +map ${HLSERVER_MAP}"
-ARGS="${ARGS} +maxplayers ${HLSERVER_MAXPLAYERS}"
-ARGS="${ARGS} -game ${HLSERVER_GAME}"
-
-# Add custom DLL if specified and different from default
-if [ "${HLSERVER_DLL}" != "hl" ] && [ "${HLSERVER_DLL}" != "bot" ]; then
-    ARGS="${ARGS} -dll ${HLSERVER_DLL}"
-fi
-
-echo "Starting Xash3D server with args: ${ARGS}"
-cd /opt/xash3d
-exec ./xash3d ${ARGS}
-EOF
-
-RUN chmod +x /opt/xash3d/start-server.sh
-
-WORKDIR /opt/xash3d
-EXPOSE ${HLSERVER_PORT}/udp
-
-CMD ["/opt/xash3d/start-server.sh"]
+# Use the entrypoint
+ENTRYPOINT ["entrypoint.sh"]

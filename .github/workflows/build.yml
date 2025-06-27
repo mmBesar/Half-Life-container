@@ -39,7 +39,7 @@ jobs:
           mkdir -p releases/hlsdk-master
           cp artifacts/hlsdk-master-${{ matrix.arch }}/build/hl.so releases/hlsdk-master/hl_${{ matrix.arch }}.so
           cp artifacts/hlsdk-master-${{ matrix.arch }}/build/cl_dll/client.so releases/hlsdk-master/client_${{ matrix.arch }}.so
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: hlsdk-master-${{ matrix.arch }}
           path: releases/hlsdk-master/
@@ -68,7 +68,7 @@ jobs:
       - run: |
           mkdir -p releases/hlsdk-bot10
           cp artifacts/hlsdk-bot10-${{ matrix.arch }}/build/hl.so releases/hlsdk-bot10/bot_${{ matrix.arch }}.so
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: hlsdk-bot10-${{ matrix.arch }}
           path: releases/hlsdk-bot10/

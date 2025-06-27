@@ -47,7 +47,6 @@ RUN mkdir -p /opt/xash3d/{bin,valve/dlls,valve/cl_dlls,hlsdk}
 
 COPY --from=xash3d-builder /build/xash3d-fwgs/build/engine/xash3d /opt/xash3d/bin/
 COPY --from=xash3d-builder /build/xash3d-fwgs/build/game_launch/xash3d.sh /opt/xash3d/bin/
-
 COPY --from=hlsdk-master-builder /build/hlsdk-master/build/dlls/hl.so /opt/xash3d/hlsdk/hl_amd64.so
 COPY --from=hlsdk-master-builder /build/hlsdk-master/build/cl_dll/client.so /opt/xash3d/hlsdk/client_amd64.so
 COPY --from=hlsdk-bot10-builder /build/hlsdk-bot10/build/dlls/hl.so /opt/xash3d/hlsdk/bot_amd64.so
@@ -59,11 +58,9 @@ HLSDK_BRANCH=${HLSDK_BRANCH:-master}
 rm -f valve/dlls/hl.so valve/cl_dlls/client.so
 mkdir -p valve/dlls valve/cl_dlls
 if [ "$HLSDK_BRANCH" = "bot10" ]; then
-  echo "Using bot10"
   ln -sf ../hlsdk/bot_amd64.so valve/dlls/hl.so
   ln -sf ../hlsdk/client_amd64.so valve/cl_dlls/client.so
 else
-  echo "Using master"
   ln -sf ../hlsdk/hl_amd64.so valve/dlls/hl.so
   ln -sf ../hlsdk/client_amd64.so valve/cl_dlls/client.so
 fi
@@ -89,7 +86,6 @@ if [ "$HLSDK_BRANCH" = "bot10" ] && [ "$HLSERVER_BOTS" = "true" ]; then
   XASH_ARGS="$XASH_ARGS +exec bot.cfg"
 fi
 
-echo "Starting: $XASH_ARGS"
 exec ./bin/xash3d $XASH_ARGS
 EOF
 RUN chmod +x /opt/xash3d/bin/start-server.sh

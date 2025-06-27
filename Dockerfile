@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y \
     libsdl2-dev \
     libfontconfig-dev \
     libfreetype6-dev \
+    gcc-multilib \
+    g++-multilib \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Waf
@@ -35,27 +37,25 @@ RUN python3 waf configure -T release --dedicated --64bits \
 FROM base-builder AS hlsdk-master-builder
 
 # Clone HLSDK master branch
-RUN git clone --depth 1 https://github.com/FWGS/hlsdk-portable.git hlsdk-master
+RUN git clone --recursive --depth 1 https://github.com/FWGS/hlsdk-portable.git hlsdk-master
 
 WORKDIR /build/hlsdk-master
 
 # Build HLSDK master with CMake
-RUN mkdir build && cd build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
-    && make -j$(nproc)
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
+    && cmake --build build -j$(nproc)
 
 # Stage 3: Build HLSDK bot10 branch
 FROM base-builder AS hlsdk-bot10-builder
 
 # Clone HLSDK bot10 branch
-RUN git clone --depth 1 -b bot10 https://github.com/FWGS/hlsdk-portable.git hlsdk-bot10
+RUN git clone --recursive --depth 1 -b bot10 https://github.com/FWGS/hlsdk-portable.git hlsdk-bot10
 
 WORKDIR /build/hlsdk-bot10
 
 # Build HLSDK bot10 with CMake
-RUN mkdir build && cd build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
-    && make -j$(nproc)
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON \
+    && cmake --build build -j$(nproc)
 
 # Final runtime stage
 FROM debian:bookworm-slim AS runtime
@@ -69,18 +69,18 @@ RUN apt-get update && apt-get install -y \
     && useradd -r -s /bin/false -d /opt/xash3d xash3d
 
 # Create directories
-RUN mkdir -p /opt/xash3d/{bin,hlsdk,valve} \
+RUN mkdir -p /opt/xash3d/{bin,data/dlls,valve} \
     && chown -R xash3d:xash3d /opt/xash3d
 
 # Copy Xash3D engine
 COPY --from=xash3d-builder /build/xash3d-fwgs/build/engine/xash3d /opt/xash3d/bin/
 
 # Copy HLSDK master files
-COPY --from=hlsdk-master-builder /build/hlsdk-master/build/dlls/hl.so /opt/xash3d/hlsdk/hl_amd64.so
-COPY --from=hlsdk-master-builder /build/hlsdk-master/build/cl_dll/client.so /opt/xash3d/hlsdk/client_amd64.so
+COPY --from=hlsdk-master-builder /build/hlsdk-master/build/dlls/hl.so /opt/xash3d/data/dlls/hl_$(uname -m | sed 's/x86_64/amd64/').so
+COPY --from=hlsdk-master-builder /build/hlsdk-master/build/cl_dll/client.so /opt/xash3d/data/dlls/client_$(uname -m | sed 's/x86_64/amd64/').so
 
-# Copy HLSDK bot10 files
-COPY --from=hlsdk-bot10-builder /build/hlsdk-bot10/build/dlls/hl.so /opt/xash3d/hlsdk/bot_amd64.so
+# Copy HLSDK bot10 files  
+COPY --from=hlsdk-bot10-builder /build/hlsdk-bot10/build/dlls/hl.so /opt/xash3d/data/dlls/bot_$(uname -m | sed 's/x86_64/amd64/').so
 
 # Create entrypoint script
 RUN cat > /opt/xash3d/entrypoint.sh << 'EOF'
@@ -92,38 +92,55 @@ set -e
 : "${HLSERVER_IP:=0.0.0.0}"
 : "${HLSERVER_MAP:=stalkyard}"
 : "${HLSERVER_MAXPLAYERS:=16}"
-: "${HLSERVER_BOTS:=false}"
 : "${HLSERVER_GAME:=valve}"
+: "${HLSERVER_HOSTNAME:=Xash3D Server}"
+: "${HLSERVER_PASSWORD:=}"
+: "${HLSERVER_RCON_PASSWORD:=}"
+: "${HLSERVER_DLL:=hl}"
+: "${HLSERVER_EXTRA_ARGS:=}"
 
 echo "Starting Xash3D server..."
 echo "Port: $HLSERVER_PORT"
 echo "IP: $HLSERVER_IP"
 echo "Map: $HLSERVER_MAP"
 echo "Max Players: $HLSERVER_MAXPLAYERS"
-echo "Bots: $HLSERVER_BOTS"
 echo "Game: $HLSERVER_GAME"
+echo "Hostname: $HLSERVER_HOSTNAME"
+echo "DLL: $HLSERVER_DLL"
 
-# Set up game library based on bot preference
-if [ "$HLSERVER_BOTS" = "true" ]; then
-    echo "Using bot10 branch (with bots support)"
-    ln -sf /opt/xash3d/hlsdk/bot_amd64.so /opt/xash3d/valve/dlls/hl.so
-else
-    echo "Using master branch (standard)"
-    ln -sf /opt/xash3d/hlsdk/hl_amd64.so /opt/xash3d/valve/dlls/hl.so
-    ln -sf /opt/xash3d/hlsdk/client_amd64.so /opt/xash3d/valve/cl_dlls/client.so
+# Detect architecture
+ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+
+# Build server arguments
+ARGS=(
+    "-dedicated"
+    "-port" "$HLSERVER_PORT"
+    "-ip" "$HLSERVER_IP"
+    "-game" "$HLSERVER_GAME"
+    "-dll" "/opt/xash3d/data/dlls/${HLSERVER_DLL}_${ARCH}.so"
+    "+hostname" "$HLSERVER_HOSTNAME"
+    "+maxplayers" "$HLSERVER_MAXPLAYERS"
+    "+map" "$HLSERVER_MAP"
+)
+
+# Add optional parameters
+if [ -n "$HLSERVER_PASSWORD" ]; then
+    ARGS+=("+sv_password" "$HLSERVER_PASSWORD")
 fi
 
-# Ensure directories exist
-mkdir -p /opt/xash3d/valve/{dlls,cl_dlls}
+if [ -n "$HLSERVER_RCON_PASSWORD" ]; then
+    ARGS+=("+rcon_password" "$HLSERVER_RCON_PASSWORD")
+fi
+
+# Add extra args if provided
+if [ -n "$HLSERVER_EXTRA_ARGS" ]; then
+    eval "ARGS+=($HLSERVER_EXTRA_ARGS)"
+fi
+
+echo "Starting with args: ${ARGS[*]}"
 
 # Start the server
-exec /opt/xash3d/bin/xash3d \
-    -dedicated \
-    -port "$HLSERVER_PORT" \
-    -ip "$HLSERVER_IP" \
-    +map "$HLSERVER_MAP" \
-    -maxplayers "$HLSERVER_MAXPLAYERS" \
-    -game "$HLSERVER_GAME"
+exec /opt/xash3d/bin/xash3d "${ARGS[@]}"
 EOF
 
 RUN chmod +x /opt/xash3d/entrypoint.sh \
@@ -141,7 +158,11 @@ ENV HLSERVER_PORT=27015 \
     HLSERVER_IP=0.0.0.0 \
     HLSERVER_MAP=stalkyard \
     HLSERVER_MAXPLAYERS=16 \
-    HLSERVER_BOTS=false \
-    HLSERVER_GAME=valve
+    HLSERVER_GAME=valve \
+    HLSERVER_HOSTNAME="Xash3D Server" \
+    HLSERVER_PASSWORD="" \
+    HLSERVER_RCON_PASSWORD="" \
+    HLSERVER_DLL=hl \
+    HLSERVER_EXTRA_ARGS=""
 
 ENTRYPOINT ["/opt/xash3d/entrypoint.sh"]

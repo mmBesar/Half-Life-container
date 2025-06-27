@@ -7,10 +7,13 @@ RUN apt-get update && apt-get install -y \
     cmake \
     python3 \
     python3-pip \
+    python3-setuptools \
+    python3-wheel \
     pkg-config \
     libsdl2-dev \
     libfontconfig-dev \
     libfreetype6-dev \
+    libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create build directory
@@ -27,8 +30,8 @@ RUN git clone -b bot10 https://github.com/FWGS/hlsdk-portable.git hlsdk-bot10
 
 # Build Xash3D-FWGS engine (server only)
 WORKDIR /build/xash3d-fwgs
-RUN ./waf configure -T release --dedicated --enable-lto --enable-bundled-deps
-RUN ./waf build
+RUN python3 waf configure -T release --dedicated --enable-lto --enable-bundled-deps
+RUN python3 waf build
 
 # Build HLSDK master branch (regular Half-Life)
 WORKDIR /build/hlsdk-master

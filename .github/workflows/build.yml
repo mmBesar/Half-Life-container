@@ -22,7 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: actions/cache@v3
+      - name: Cache
+        uses: actions/cache@v3
         with:
           path: /tmp/.bldx-hlsdk-master-${{ matrix.arch }}
           key: ${{ runner.os }}-hlsdk-master-${{ matrix.arch }}-${{ github.sha }}
@@ -51,7 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: actions/cache@v3
+      - name: Cache
+        uses: actions/cache@v3
         with:
           path: /tmp/.bldx-hlsdk-bot10-${{ matrix.arch }}
           key: ${{ runner.os }}-hlsdk-bot10-${{ matrix.arch }}-${{ github.sha }}
@@ -155,8 +157,12 @@ jobs:
             releases/hlsdk-bot10-${{ github.ref_name }}.tar.gz
           body: |
             ## Xash3D Server ${{ github.ref_name }}
+
+            Includes multi-arch Docker image & HLSDK .so's.
+
             ### HLSDK Master:
             - hl_amd64.so
             - client_amd64.so
+
             ### HLSDK Bot10:
             - bot_amd64.so

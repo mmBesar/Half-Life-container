@@ -10,10 +10,12 @@ on:
     paths:
       - '.github/workflows/image-build.yml'
       - 'Dockerfile'
+      - 'entrypoint.sh'
   pull_request:
     paths:
       - '.github/workflows/image-build.yml'
       - 'Dockerfile'
+      - 'entrypoint.sh'
   workflow_dispatch:
 
 jobs:

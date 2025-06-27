@@ -1,38 +1,39 @@
-# Stage 1: Xash3D Engine Build
+# Stage 1: Build Xash3D engine
 FROM debian:bookworm-slim AS xash3d-builder
 RUN apt-get update && apt-get install -y \
-  build-essential python3 git wget pkg-config \
+  build-essential python3 git libsdl2-dev \
   libfontconfig1-dev libfreetype6-dev zlib1g-dev \
-  libpng-dev libjpeg-dev libvorbis-dev libogg-dev libopus-dev libopusfile-dev \
-  libsdl2-dev && rm -rf /var/lib/apt/lists/*
+  libpng-dev libjpeg-dev libvorbis-dev libogg-dev \
+  libopus-dev libopusfile-dev pkg-config \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /build/xash3d-fwgs
 RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git .
 RUN ./waf configure --build-type=release --dedicated
 RUN ./waf build
 
-# Stage 2: HLSDK Master - Waf
+# Stage 2: Build HLSDK master using waf
 FROM debian:bookworm-slim AS hlsdk-master-builder
-RUN apt-get update && apt-get install -y build-essential python3 git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+  build-essential python3 git python3-setuptools \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 RUN git clone https://github.com/FWGS/hlsdk-portable.git hlsdk-master
 WORKDIR /build/hlsdk-master
 RUN ./waf configure --build-type=release
 RUN ./waf build
 
-# Stage 3: HLSDK Bot10 - CMake + Clang + Ninja
+# Stage 3: Build HLSDK bot10 using cmake + make
 FROM debian:bookworm-slim AS hlsdk-bot10-builder
 RUN apt-get update && apt-get install -y \
-  build-essential clang ninja-build cmake git \
-  libstdc++-12-dev zlib1g-dev libcurl4-openssl-dev libgl1-mesa-dev libx11-dev \
+  build-essential git cmake make pkg-config \
   && rm -rf /var/lib/apt/lists/*
-ENV CC=clang CXX=clang++
 WORKDIR /build
 RUN git clone -b bot10 https://github.com/FWGS/hlsdk-portable.git hlsdk-bot10
 WORKDIR /build/hlsdk-bot10
-RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+RUN cmake .. -B build -DCMAKE_BUILD_TYPE=Release -DGOLDSOURCE_SUPPORT=ON -D64BIT=ON
 RUN cmake --build build --parallel $(nproc)
 
-# Stage 4: Runtime
+# Stage 4: Runtime image
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y \
   libsdl2-2.0-0 libvorbisfile3 libopusfile0 \
@@ -76,11 +77,11 @@ cd /opt/xash3d
 : "${HLSERVER_GAME:=valve}"
 : "${HLSDK_BRANCH:=master}"
 : "${XASH_EXTRA_ARGS:=}"
-ARGS="-dedicated -ip $HLSERVER_IP -port $HLSERVER_PORT +map $HLSERVER_MAP +maxplayers $HLSERVER_MAXPLAYERS -game $HLSERVER_GAME"
-if [[ "$HLSDK_BRANCH" == "bot10" && "$HLSERVER_BOTS" == "true" ]]; then
-  ARGS+=" +exec bot.cfg"
+ARGS=\"-dedicated -ip $HLSERVER_IP -port $HLSERVER_PORT +map $HLSERVER_MAP +maxplayers $HLSERVER_MAXPLAYERS -game $HLSERVER_GAME\"
+if [[ \"$HLSDK_BRANCH\" == \"bot10\" && \"$HLSERVER_BOTS\" == \"true\" ]]; then
+  ARGS+=\" +exec bot.cfg\"
 fi
-ARGS+=" $XASH_EXTRA_ARGS"
+ARGS+=\" $XASH_EXTRA_ARGS\"
 exec ./bin/xash3d $ARGS
 EOF
 RUN chmod +x ./bin/start-server.sh

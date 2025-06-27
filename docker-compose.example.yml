@@ -2,25 +2,43 @@ version: "3.8"
 
 services:
   half-life:
-    image: ghcr.io/${GHCR_REPO_OWNER:-yourname}/half-life:latest
+    image: ghcr.io/mmbesar/half-life-container:latest
     container_name: half-life
-    user: "${PUID:-1000}:${PGID:-1000}"
-    networks:
-      - hl_net
+    network_mode: "host"
     restart: unless-stopped
-    ports:
-      - "${HLSERVER_PORT:-27015}:${HLSERVER_PORT:-27015}/udp"
-    environment:
-      HLSERVER_GAME: valve # or cstrike
-      HLSERVER_PORT: "${HLSERVER_PORT:-27015}"
-      HLSERVER_MAP: "${HLSERVER_MAP:-stalkyard}"
-      HLSERVER_MAXPLAYERS: "${HLSERVER_MAXPLAYERS:-16}"
-      HLSERVER_BOTS: "${HLSERVER_BOTS:-false}"
+    user: "1000:1000"
+    # ports:
+    #   - "27015:27015/udp"  # main game port
+    #   - "27005:27005/udp"  # client challenge/init
+    #   - "27025:27025/udp"  # alternate game/query
+    #   - "47584:47584/udp"  # voice chat/optional
+    #   - "47584:47584/tcp"  # optional TCP/RCON
     volumes:
-      - ./valve:/data/valve
-      - ./logs:/data/logs
-      - ./configs:/data/configs:ro
-
-networks:
-  hl_net:
-    external: true
+      - ${CONTAINER_DIR}/half-life/valve:/data/valve
+      - ${CONTAINER_DIR}/half-life/dll:/data/dll
+      - ${CONTAINER_DIR}/half-life/cstrike:/data/cstrike
+      - ${CONTAINER_DIR}/half-life/logs:/data/logs
+      - ${CONTAINER_DIR}/half-life/configs:/data/configs:ro
+      - ${CONTAINER_DIR}/half-life/entrypoint.sh:/usr/local/bin/entrypoint.sh
+    environment:
+      # XASH3D_BASE: /opt/xash
+      # HLSDK_LIBS_PATH: /opt/hlsdk-libs
+      HLSERVER_IP: 0.0.0.0
+      HLSERVER_GAME: valve
+      HLSERVER_PORT: 27015
+      HLSERVER_MAXPLAYERS: 16
+      HLSERVER_FRAGLIMIT: 20
+      HLSERVER_TIMELIMIT: 10
+      HLSERVER_MAP: stalkyard
+      HLSERVER_MAPCYCLE: stalkyard,gasworks,datacore
+      HLSERVER_BOTS: true
+      HLSERVER_BOTS_COUNT: 8
+    # Resource limits for Pi4
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M

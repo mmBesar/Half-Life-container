@@ -6,16 +6,16 @@ permissions:
 name: Build, Push & Manifest Multi-Arch Image
 
 on:
-  push:
-    paths:
-      - '.github/workflows/image-build.yml'
-      - 'Dockerfile'
-      - 'entrypoint.sh'
-  pull_request:
-    paths:
-      - '.github/workflows/image-build.yml'
-      - 'Dockerfile'
-      - 'entrypoint.sh'
+  # push:
+  #   paths:
+  #     - '.github/workflows/image-build.yml'
+  #     - 'Dockerfile'
+  #     - 'entrypoint.sh'
+  # pull_request:
+  #   paths:
+  #     - '.github/workflows/image-build.yml'
+  #     - 'Dockerfile'
+  #     - 'entrypoint.sh'
   workflow_dispatch:
 
 jobs:

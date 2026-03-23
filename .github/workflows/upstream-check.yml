@@ -1,0 +1,61 @@
+name: Check Upstream & Trigger Rebuild
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:          # allow manual trigger anytime
+
+permissions:
+  contents: write             # needed to commit the updated SHA file
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream continuous tag SHA
+        id: upstream
+        run: |
+          SHA=$(curl -sf \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/FWGS/xash3d-fwgs/git/refs/tags/continuous" \
+            | jq -r '.object.sha')
+
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            echo "❌ Failed to fetch upstream SHA"
+            exit 1
+          fi
+
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "✅ Upstream SHA: $SHA"
+
+      - name: Read last known SHA
+        id: last
+        run: |
+          LAST=$(cat .github/last_upstream_sha 2>/dev/null | tr -d '[:space:]')
+          echo "sha=$LAST" >> "$GITHUB_OUTPUT"
+          echo "📋 Last built SHA: $LAST"
+
+      - name: Compare SHAs
+        id: compare
+        run: |
+          if [ "${{ steps.upstream.outputs.sha }}" = "${{ steps.last.outputs.sha }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️  No change — skipping rebuild"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "🆕 Change detected — will trigger rebuild"
+          fi
+
+      - name: Update SHA file and commit
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          echo "${{ steps.upstream.outputs.sha }}" > .github/last_upstream_sha
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/last_upstream_sha
+          git commit -m "chore: upstream xash3d-fwgs updated to ${{ steps.upstream.outputs.sha }}"
+          git push

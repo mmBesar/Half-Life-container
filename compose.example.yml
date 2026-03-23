@@ -1,0 +1,114 @@
+# =============================================================================
+# Half-Life Dedicated Server — Docker Compose
+# https://github.com/mmBesar/Half-Life-container
+#
+# QUICK START:
+#   1. Copy your Half-Life "valve" folder to ${CONTAINER_DIR}/half-life/valve/
+#   2. Set your variables in a .env file (see below)
+#   3. Run: docker compose up -d
+#
+# REQUIRED .env variables:
+#   CONTAINER_DIR   — base path where game data lives  e.g. /opt/containers
+#   PUID / PGID     — your user/group ID  (run: id)
+#   TZ              — your timezone       e.g. Africa/Cairo
+#   BASIC_PASSWORD  — RCON password
+# =============================================================================
+
+services:
+  half-life:
+    image: ghcr.io/mmbesar/half-life-container:latest
+    container_name: half-life
+
+    # ── Network ───────────────────────────────────────────────────────────────
+    # host mode is recommended — avoids NAT issues with UDP game traffic.
+    # If you prefer bridge mode, comment out network_mode, uncomment ports,
+    # and uncomment the networks section at the bottom.
+    network_mode: "host"
+    # networks:
+    #   - ${NETWORK}
+    # ports:
+    #   - "27015:27015/udp"  # main game port
+    #   - "27005:27005/udp"  # client port
+    #   - "27025:27025/udp"  # alternate query port
+    #   - "47584:47584/udp"  # voice chat
+    #   - "47584:47584/tcp"  # RCON / optional TCP
+
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+
+    # ── Volumes ───────────────────────────────────────────────────────────────
+    # valve/     — required: copy from your Half-Life installation
+    # cstrike/   — optional: Counter-Strike game files
+    # dll/       — optional: custom game DLLs
+    # logs/      — optional: persistent server logs
+    # configs/   — optional: read-only extra configs
+    # entrypoint — optional: mount your own entrypoint to override the default
+    volumes:
+      - ${CONTAINER_DIR}/half-life/valve:/data/valve
+      - ${CONTAINER_DIR}/half-life/dll:/data/dll
+      - ${CONTAINER_DIR}/half-life/cstrike:/data/cstrike
+      - ${CONTAINER_DIR}/half-life/logs:/data/logs
+      - ${CONTAINER_DIR}/half-life/configs:/data/configs:ro
+      - ${CONTAINER_DIR}/half-life/entrypoint.sh:/usr/local/bin/entrypoint.sh
+
+    environment:
+      TZ: ${TZ}
+
+      # ── Internal paths (no need to change unless you know what you're doing)
+      # XASH3D_BASE: /opt/xash
+      # HLSDK_LIBS_PATH: /opt/hlsdk-libs
+
+      # ── Server ────────────────────────────────────────────────────────────
+      HLSERVER_GAME: valve          # Game mod directory: valve | cstrike | etc.
+      HLSERVER_IP: 0.0.0.0          # Bind IP — 0.0.0.0 listens on all interfaces
+      HLSERVER_PORT: 27015          # UDP port clients connect to
+      HLSERVER_MAXPLAYERS: 16       # Max human + bot slots (max 32)
+      HLSERVER_MAP: stalkyard       # Starting map
+      HLSERVER_MAPCYCLE: stalkyard,gasworks,datacore  # Comma-separated map rotation
+      HLSERVER_FRAGLIMIT: 20        # Frags to end the round  (0 = disabled)
+      HLSERVER_TIMELIMIT: 10        # Minutes per map         (0 = disabled)
+      HLSERVER_TICRATE: 10          # Server tick rate — keep low on Pi / weak hardware
+      HLSERVER_RCON_PASS: ${BASIC_PASSWORD}  # Remote console password
+
+      # ── Bots ──────────────────────────────────────────────────────────────
+      # Uses Botman's HPB Bot #10 integrated into the game DLL.
+      # Bots only work with HLSERVER_GAME: valve (Half-Life deathmatch).
+      HLSERVER_BOTS: true           # true | false
+      HLSERVER_BOTS_COUNT: 8        # How many bots to spawn
+      HLSERVER_BOT_SKILL: 1         # Skill level: 1=easiest  5=hardest
+      HLSERVER_BOT_STOP: 0          # 1 = freeze all bots in place
+      HLSERVER_BOT_CHAT: 0          # 1 = bots send chat messages
+      HLSERVER_BOT_NAMES:           # Optional comma-separated names e.g. Gordon,Barney
+                                    # Extra slots beyond named bots get random names
+
+      # ── Bot weapon permissions ─────────────────────────────────────────────
+      # 1 = bots may use this weapon class   0 = bots will never pick it up
+      HLSERVER_BOT_ALLOW_ROGUES: 1       # Allow bots without waypoint coverage
+      HLSERVER_BOT_ALLOW_PISTOLS: 1
+      HLSERVER_BOT_ALLOW_SHOTGUNS: 1
+      HLSERVER_BOT_ALLOW_MG: 1           # Machine guns (e.g. M249)
+      HLSERVER_BOT_ALLOW_SMG: 1          # Submachine guns (e.g. MP5)
+      HLSERVER_BOT_ALLOW_RIFLES: 1
+      HLSERVER_BOT_ALLOW_GRENADES: 1
+      HLSERVER_BOT_ALLOW_RPG: 1
+      HLSERVER_BOT_ALLOW_GAUSS: 1
+      HLSERVER_BOT_ALLOW_EGON: 1
+      HLSERVER_BOT_ALLOW_SATCHEL: 1
+      HLSERVER_BOT_ALLOW_TRIPMINE: 1
+      HLSERVER_BOT_ALLOW_SNARKS: 1
+      HLSERVER_BOT_ALLOW_HORNETGUN: 1
+
+    # ── Resource limits ───────────────────────────────────────────────────────
+    # Tuned for a Raspberry Pi 4 — remove or adjust for more powerful hardware
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+# networks:
+#   your_network:
+#     external: true

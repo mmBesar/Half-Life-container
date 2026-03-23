@@ -21,7 +21,7 @@ services:
 
     # ── Network ───────────────────────────────────────────────────────────────
     # host mode is recommended — avoids NAT issues with UDP game traffic.
-    # If you prefer bridge mode, comment out network_mode, uncomment ports,
+    # To use bridge mode: comment out network_mode, uncomment ports block,
     # and uncomment the networks section at the bottom.
     network_mode: "host"
     # networks:
@@ -37,12 +37,12 @@ services:
     user: "${PUID}:${PGID}"
 
     # ── Volumes ───────────────────────────────────────────────────────────────
-    # valve/     — required: copy from your Half-Life installation
-    # cstrike/   — optional: Counter-Strike game files
-    # dll/       — optional: custom game DLLs
-    # logs/      — optional: persistent server logs
-    # configs/   — optional: read-only extra configs
-    # entrypoint — optional: mount your own entrypoint to override the default
+    # valve/       — required: copy from your Half-Life installation
+    # cstrike/     — optional: Counter-Strike game files
+    # dll/         — optional: custom game DLLs
+    # logs/        — optional: persistent server logs
+    # configs/     — optional: read-only extra configs
+    # entrypoint   — optional: override the default entrypoint
     volumes:
       - ${CONTAINER_DIR}/half-life/valve:/data/valve
       - ${CONTAINER_DIR}/half-life/dll:/data/dll
@@ -54,49 +54,58 @@ services:
     environment:
       TZ: ${TZ}
 
-      # ── Internal paths (no need to change unless you know what you're doing)
+      # ── Internal paths (only change if you know what you're doing) ─────────
       # XASH3D_BASE: /opt/xash
       # HLSDK_LIBS_PATH: /opt/hlsdk-libs
 
       # ── Server ────────────────────────────────────────────────────────────
       HLSERVER_GAME: valve          # Game mod directory: valve | cstrike | etc.
+      HLSERVER_NAME: "Half-Life Server"  # Server name shown in browser
       HLSERVER_IP: 0.0.0.0          # Bind IP — 0.0.0.0 listens on all interfaces
       HLSERVER_PORT: 27015          # UDP port clients connect to
       HLSERVER_MAXPLAYERS: 16       # Max human + bot slots (max 32)
       HLSERVER_MAP: stalkyard       # Starting map
       HLSERVER_MAPCYCLE: stalkyard,gasworks,datacore  # Comma-separated map rotation
-      HLSERVER_FRAGLIMIT: 20        # Frags to end the round  (0 = disabled)
-      HLSERVER_TIMELIMIT: 10        # Minutes per map         (0 = disabled)
+      HLSERVER_FRAGLIMIT: 20        # Frags to end the round (0 = disabled)
+      HLSERVER_TIMELIMIT: 10        # Minutes per map        (0 = disabled)
       HLSERVER_TICRATE: 10          # Server tick rate — keep low on Pi / weak hardware
-      HLSERVER_RCON_PASS: ${BASIC_PASSWORD}  # Remote console password
+      HLSERVER_RCON_PASS: ${BASIC_PASSWORD}
 
       # ── Bots ──────────────────────────────────────────────────────────────
-      # Uses Botman's HPB Bot #10 integrated into the game DLL.
-      # Bots only work with HLSERVER_GAME: valve (Half-Life deathmatch).
+      # Uses botman's HPB Bot #10 integrated directly into the game DLL.
+      # The DLL has NO runtime cvars — all control is via bot.cfg, which the
+      # DLL reads and parses itself at startup (not the engine config system).
       HLSERVER_BOTS: true           # true | false
-      HLSERVER_BOTS_COUNT: 8        # How many bots to spawn
-      HLSERVER_BOT_SKILL: 1         # Skill level: 1=easiest  5=hardest
-      HLSERVER_BOT_STOP: 0          # 1 = freeze all bots in place
-      HLSERVER_BOT_CHAT: 0          # 1 = bots send chat messages
-      HLSERVER_BOT_NAMES:           # Optional comma-separated names e.g. Gordon,Barney
-                                    # Extra slots beyond named bots get random names
+      HLSERVER_BOTS_COUNT: 8        # Total number of bots to spawn
 
-      # ── Bot weapon permissions ─────────────────────────────────────────────
-      # 1 = bots may use this weapon class   0 = bots will never pick it up
-      HLSERVER_BOT_ALLOW_ROGUES: 1       # Allow bots without waypoint coverage
-      HLSERVER_BOT_ALLOW_PISTOLS: 1
-      HLSERVER_BOT_ALLOW_SHOTGUNS: 1
-      HLSERVER_BOT_ALLOW_MG: 1           # Machine guns (e.g. M249)
-      HLSERVER_BOT_ALLOW_SMG: 1          # Submachine guns (e.g. MP5)
-      HLSERVER_BOT_ALLOW_RIFLES: 1
-      HLSERVER_BOT_ALLOW_GRENADES: 1
-      HLSERVER_BOT_ALLOW_RPG: 1
-      HLSERVER_BOT_ALLOW_GAUSS: 1
-      HLSERVER_BOT_ALLOW_EGON: 1
-      HLSERVER_BOT_ALLOW_SATCHEL: 1
-      HLSERVER_BOT_ALLOW_TRIPMINE: 1
-      HLSERVER_BOT_ALLOW_SNARKS: 1
-      HLSERVER_BOT_ALLOW_HORNETGUN: 1
+      # Skill: 1=best (hardest to beat)  5=worst (easiest to beat)
+      # Default in source code is 3. Applied to all bots unless overridden
+      # per-bot via HLSERVER_BOT_NAMES (see below).
+      HLSERVER_BOT_SKILL: 3
+
+      # botdontshoot: 0 = bots shoot at enemies  1 = bots never shoot
+      HLSERVER_BOT_DONTSHOOT: 0
+
+      # min_bots: when a human joins, a bot is kicked to stay at or above
+      # this floor. 0 = disabled (bots are never auto-kicked).
+      HLSERVER_BOT_MIN: 0
+
+      # max_bots: server auto-fills with bots up to this count.
+      # 0 = disabled (only bot.cfg addbot commands are used).
+      HLSERVER_BOT_MAX: 0
+
+      # Bot names/skins — optional, comma-separated "skin:name" pairs.
+      # Slots beyond the list use random skins and default names.
+      #
+      # Format:  "skin:name"  or  "skin"  or  ":name"
+      # Valid skins: barney gina gman gordon helmet hgrunt recon robo scientist zombie
+      #
+      # Examples:
+      #   "gordon:Freeman,barney:Calhoun"  — specific skin + custom name
+      #   "gordon,barney,zombie"           — specific skins, default names
+      #   ":Freeman,:Calhoun"              — random skins, custom names
+      #   ""                               — all random (leave blank)
+      HLSERVER_BOT_NAMES:
 
     # ── Resource limits ───────────────────────────────────────────────────────
     # Tuned for a Raspberry Pi 4 — remove or adjust for more powerful hardware

@@ -1,4 +1,3 @@
-# .github/workflows/image-build.yml
 permissions:
   contents: read
   packages: write
@@ -6,39 +5,41 @@ permissions:
 name: Build, Push & Manifest Multi-Arch Image
 
 on:
-  # push:
-  #   paths:
-  #     - '.github/workflows/image-build.yml'
-  #     - 'Dockerfile'
-  #     - 'entrypoint.sh'
-  # pull_request:
-  #   paths:
-  #     - '.github/workflows/image-build.yml'
-  #     - 'Dockerfile'
-  #     - 'entrypoint.sh'
+  push:
+    paths:
+      - '.github/workflows/image-build.yml'
+      - '.github/last_upstream_sha'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+  pull_request:
+    paths:
+      - '.github/workflows/image-build.yml'
+      - '.github/last_upstream_sha'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
 
     outputs:
       image_name: ${{ steps.lowercase.outputs.image_name }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Register QEMU for emulation
-        uses: docker/setup-qemu-action@v3
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          install: true
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -54,12 +55,12 @@ jobs:
           echo "image_name=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Build & push ${{ matrix.arch }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           platforms: linux/${{ matrix.arch }}
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ steps.lowercase.outputs.image_name }}:latest-${{ matrix.arch }}
             ghcr.io/${{ steps.lowercase.outputs.image_name }}:${{ github.sha }}-${{ matrix.arch }}
@@ -67,12 +68,11 @@ jobs:
   manifest:
     needs: build
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
 
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          install: true
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

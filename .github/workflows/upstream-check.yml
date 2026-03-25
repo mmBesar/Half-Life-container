@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Fetch upstream continuous tag SHA
         id: upstream
@@ -22,7 +22,7 @@ jobs:
           SHA=$(curl -sf \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/FWGS/xash3d-fwgs/git/refs/tags/continuous" \
-            | jq -r '.object.sha')
+            | jq -r 'if type == "array" then last | .object.sha else .object.sha end')
 
           if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
             echo "❌ Failed to fetch upstream SHA"

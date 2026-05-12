@@ -28,6 +28,8 @@ jobs:
             runner: ubuntu-24.04
           - arch: arm64
             runner: ubuntu-24.04-arm
+          - arch: riscv64
+            runner: ubuntu-24.04
 
     runs-on: ${{ matrix.runner }}
 
@@ -37,6 +39,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Set up QEMU for cross-compilation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: riscv64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -87,4 +94,5 @@ jobs:
           docker buildx imagetools create \
             --tag ghcr.io/$IMAGE:latest \
             ghcr.io/$IMAGE:latest-amd64 \
-            ghcr.io/$IMAGE:latest-arm64
+            ghcr.io/$IMAGE:latest-arm64 \
+            ghcr.io/$IMAGE:latest-riscv64

@@ -22,6 +22,9 @@ RUN apt-get update && apt-get install -y \
     && if [ "$TARGETARCH" = "arm64" ]; then \
         apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu; \
     fi \
+    && if [ "$TARGETARCH" = "riscv64" ]; then \
+        apt-get install -y gcc-riscv64-linux-gnu g++-riscv64-linux-gnu; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory for Xash3D
@@ -32,6 +35,7 @@ RUN git clone --recursive https://github.com/FWGS/xash3d-fwgs.git . && \
     case "$TARGETARCH" in \
         amd64) ./waf configure --dedicated -T release -8 ;; \
         arm64) ./waf configure --dedicated -T release ;; \
+        riscv64) ./waf configure --dedicated -T release ;; \
         *) ./waf configure --dedicated -T release ;; \
     esac && \
     ./waf build && \
@@ -68,6 +72,20 @@ RUN git clone --depth 1 --branch master https://github.com/FWGS/hlsdk-portable.g
             ls -la dlls/ cl_dll/ && \
             cp dlls/hl_arm64.so /artifacts/hl_master_arm64.so && \
             cp cl_dll/client_arm64.so /artifacts/client_master_arm64.so ;; \
+        riscv64) \
+            cmake .. \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DGOLDSOURCE_SUPPORT=ON \
+                -D64BIT=ON \
+                -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=riscv64 \
+                -Wno-dev && \
+            make -j$(nproc) && \
+            ls -la dlls/ cl_dll/ && \
+            cp dlls/hl_riscv64.so /artifacts/hl_master_riscv64.so && \
+            cp cl_dll/client_riscv64.so /artifacts/client_master_riscv64.so ;; \
     esac
 
 # Build HLSDK Bot10 Branch (with bot AI)
@@ -93,6 +111,19 @@ RUN git clone --depth 1 --branch bot10 https://github.com/FWGS/hlsdk-portable.gi
             make -j$(nproc) && \
             ls -la dlls/ && \
             cp dlls/bot_*.so /artifacts/hl_bot_arm64.so ;; \
+        riscv64) \
+            cmake .. \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DGOLDSOURCE_SUPPORT=ON \
+                -D64BIT=ON \
+                -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc \
+                -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++ \
+                -DCMAKE_SYSTEM_NAME=Linux \
+                -DCMAKE_SYSTEM_PROCESSOR=riscv64 \
+                -Wno-dev && \
+            make -j$(nproc) && \
+            ls -la dlls/ && \
+            cp dlls/bot_*.so /artifacts/hl_bot_riscv64.so ;; \
     esac
 
 # Copy all HLSDK libraries to the Xash directory for the container

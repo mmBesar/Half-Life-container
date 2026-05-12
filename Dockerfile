@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim AS builder
+FROM debian:trixie-slim AS builder
 
 ARG TARGETARCH
 ARG TARGETPLATFORM
@@ -139,7 +139,7 @@ RUN echo "=== Built Artifacts ===" && \
     find /artifacts -type f -exec file {} \;
 
 # Final runtime stage
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive

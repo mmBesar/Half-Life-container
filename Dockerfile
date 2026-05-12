@@ -84,8 +84,8 @@ RUN git clone --depth 1 --branch master https://github.com/FWGS/hlsdk-portable.g
                 -Wno-dev && \
             make -j$(nproc) && \
             ls -la dlls/ cl_dll/ && \
-            cp dlls/hl_riscv64.so /artifacts/hl_master_riscv64.so && \
-            cp cl_dll/client_riscv64.so /artifacts/client_master_riscv64.so ;; \
+            cp dlls/hl_riscv64d.so /artifacts/hl_master_riscv64.so && \
+            cp cl_dll/client_riscv64d.so /artifacts/client_master_riscv64.so ;; \
     esac
 
 # Build HLSDK Bot10 Branch (with bot AI)
@@ -123,7 +123,7 @@ RUN git clone --depth 1 --branch bot10 https://github.com/FWGS/hlsdk-portable.gi
                 -Wno-dev && \
             make -j$(nproc) && \
             ls -la dlls/ && \
-            cp dlls/bot_*.so /artifacts/hl_bot_riscv64.so ;; \
+            cp dlls/bot_*d.so /artifacts/hl_bot_riscv64.so ;; \
     esac
 
 # Copy all HLSDK libraries to the Xash directory for the container

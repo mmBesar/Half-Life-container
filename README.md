@@ -20,7 +20,7 @@
 ## ✨ Features
 
 - ✅ Runs a full Half-Life dedicated server using [Xash3D FWGS](https://github.com/FWGS/xash3d-fwgs)
-- ✅ Native multi-arch builds: `amd64` and `arm64` (Raspberry Pi 4 ready)
+- ✅ Native multi-arch builds: `amd64`, `arm64` and `riscv64` (Raspberry Pi and SBCs ready)
 - ✅ Bot support via [botman's HPB Bot #10](https://github.com/FWGS/hlsdk-portable/tree/bot10)
 - ✅ Full bot control: count, skill, names, skins — all via environment variables
 - ✅ Auto-rebuilds when upstream xash3d-fwgs releases a new build
@@ -35,8 +35,9 @@
 | Tag | Description |
 |---|---|
 | `ghcr.io/mmbesar/half-life-container:latest` | Multi-arch manifest (auto-selects correct arch) |
-| `ghcr.io/mmbesar/half-life-container:latest-amd64` | amd64 only |
-| `ghcr.io/mmbesar/half-life-container:latest-arm64` | arm64 only |
+| `ghcr.io/mmbesar/half-life-container:latest-amd64`  | amd64 only   |
+| `ghcr.io/mmbesar/half-life-container:latest-arm64`  | arm64 only   |
+| `ghcr.io/mmbesar/half-life-container:latest-riscv64`| riscv64 only |
 
 ---
 
